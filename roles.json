@@ -1,0 +1,19 @@
+{
+  "password": "Admin@12345",
+  "gateway": "http://localhost:4000",
+  "apps": {
+    "auth-web": "http://localhost:3000",
+    "lms-web": "http://localhost:3001",
+    "hr-web": "http://localhost:3002",
+    "todo-web": "http://localhost:3003",
+    "lookup-admin": "http://localhost:3005"
+  },
+  "roles": [
+    { "role": "org_admin", "email": "admin@fitclass.ggn.in" },
+    { "role": "org_sr_manager", "email": "srmanager@fitclass.ggn.in" },
+    { "role": "org_manager", "email": "manager@fitclass.ggn.in" },
+    { "role": "senior_sales_executive", "email": "senior.exec@fitclass.ggn.in" },
+    { "role": "sales_representative", "email": "rep1@fitclass.ggn.in" },
+    { "role": "read_only", "email": "viewer@fitclass.ggn.in" }
+  ]
+}
