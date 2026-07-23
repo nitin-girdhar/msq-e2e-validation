@@ -29,6 +29,7 @@
 import { openState, visit, record, APPS, cfg, roleMeta, authFile } from '../../lib.mjs';
 import { actor } from '../../conc.mjs';
 import { dbReachable } from '../../db.mjs';
+import { logAction } from '../../journal.mjs';
 import {
   tenantIdForOrg, resolvedCapabilities, setOverride, restoreAll,
   sessionCapabilities, waitForSessionCapability, pendingOverrides, loadJournal,

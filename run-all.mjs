@@ -38,11 +38,16 @@ const STAGES = [
   // Depth — real writes, graded across the whole 19-role ladder.
   { tag: 'lms', script: 'suites/lms/lms-crud-matrix.mjs' },
   { tag: 'hr', script: 'suites/hr/hr-admin-matrix.mjs' },
+  { tag: 'hr', script: 'suites/hr/attendance-geofence-guard.mjs' },
+  { tag: 'hr', script: 'suites/hr/leave-lifecycle.mjs' },
+  { tag: 'hr', script: 'suites/hr/regularization-lifecycle.mjs' },
   { tag: 'todo', script: 'suites/todo/task-visibility-matrix.mjs' },
   { tag: 'admin', script: 'suites/admin/lookup-crud.mjs' },
+  { tag: 'admin', script: 'suites/admin/user-management.mjs' },
 
   // Cross-tenant isolation: log in as tenant B and try to see/touch tenant A.
   { tag: 'tenant', script: 'suites/tenant/cross-tenant-isolation.mjs' },
+  { tag: 'tenant', script: 'suites/tenant/cross-tenant-hr-config.mjs' },
 
   // Capability grants: toggle off/on and check resolver, session, UI and API
   // all agree. Runs late — it mutates authorization config (reversibly), so
