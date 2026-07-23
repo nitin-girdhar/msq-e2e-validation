@@ -1,8 +1,16 @@
 // Responsive / look-and-feel audit across phone, tablet, laptop and desktop.
 //
-// Renders every product route at 5 viewports and reports measurable layout
-// defects (sideways scroll, overflowing elements, sub-44px tap targets, tiny
-// text, overlapping controls), saving a screenshot per viewport as evidence.
+// Renders every product route at 5 viewports (phone 390, small phone 360,
+// tablet 820, laptop 1366, desktop 1920) and reports measurable layout defects,
+// saving a screenshot per viewport as evidence:
+//   - sideways scroll, overflowing elements, sub-44px tap targets, tiny text,
+//     overlapping controls;
+//   - TAB-STRIP rendering (the "Follow-ups tab looks odd on mobile" class:
+//     tabs clipped, overflowing with no scroll affordance, or wrapping to an
+//     unaligned multi-row block);
+//   - DISABLED-STATE INTEGRITY (a control that looks disabled must be genuinely
+//     inert, not merely styled or backend-guarded — catches "html hide/show but
+//     still clickable").
 //
 //   node suites/visual/responsive-audit.mjs                 # default roles
 //   node suites/visual/responsive-audit.mjs org_admin,read_only
@@ -30,7 +38,13 @@ for (const role of roles) {
         if (!res) continue;
         out.push(res);
         const worst = res.viewports.map((v) => `${v.viewport}:${v.bodyOverflowPx}px`).join(' ');
-        console.log(`  ${role.padEnd(20)} ${toolKey.padEnd(7)} ${route.path.padEnd(28)} overflow[${worst}]`);
+        // Flag routes where the phone viewport shows a tab-strip or fake-disabled issue.
+        const phone = res.viewports.find((v) => v.viewport === 'phone');
+        const flags = [
+          phone?.tabStrip && (phone.tabStrip.clipped.length || (phone.tabStrip.overflowsContainer && !phone.tabStrip.scrollableX) || phone.tabStrip.rows > 1) ? 'TABS' : '',
+          res.viewports.some((v) => v.fakeDisabled?.length) ? 'FAKE-DISABLED' : '',
+        ].filter(Boolean).join(',');
+        console.log(`  ${role.padEnd(20)} ${toolKey.padEnd(7)} ${route.path.padEnd(28)} overflow[${worst}]${flags ? '  ⚠ ' + flags : ''}`);
       }
     }
   } finally {

@@ -42,6 +42,8 @@ of the gaps below.
 | G6 | **Regularization lifecycle depth** — **✅ IMPLEMENTED** `suites/hr/regularization-lifecycle.mjs` | submit → reject (comment stored, day not flipped) → reject-without-comment 422 → WFH approve (**day resolves to `wfh`**) → self-approval 403. Records an info finding that the product exposes **no cancel/withdraw/edit** endpoint for a pending regularization. **All pass.** | Medium |
 | G7 | **Attendance button enable/disable UI-state assertions** | No assertion that the button is disabled outside-fence / no-geo / already-punched, enabled inside. | Medium |
 | G8 | **Photo / face / WFH punch rules** — **✅ IMPLEMENTED** (folded into G1's `attendance-geofence-guard.mjs`) | `require_photo` (PHOTO_REQUIRED), `require_geo` (GEO_REQUIRED), `allow_wfh_checkin` bypass, double check-in 409 — all now asserted and passing. | Medium |
+| G9 | **Tab-strip responsiveness (phone/tablet/laptop)** — **✅ CODE ADDED** in `visual.mjs` (not yet executed) | The existing audit measured generic overflow but never the in-page **tab bar** specifically, so "the Follow-ups tab looks odd on mobile" slipped through. New check: per viewport, is the tab strip clipped, overflowing with no scroll affordance, or wrapping into an unaligned multi-row block. | Medium |
+| G10 | **Disabled-state integrity (clean UI, genuinely disabled)** — **✅ CODE ADDED** in `visual.mjs` (not yet executed) | Verifies a control that *looks* disabled (faded / cursor:not-allowed / `.disabled` / `aria-disabled`) is *actually* inert (`disabled` / `pointer-events:none` / `inert`), not merely styled or backend-guarded — catches "html hide/show but still clickable / tamperable". | Medium |
 
 > ### 🔴 New bug found by `user-management.mjs` (first run) — create-user 500 for admin roles
 > `POST /users` returns **HTTP 500 `Internal server error`** for **every role from rank 40 up to `org_admin` (980)** — `senior_sales_executive`, all managers, dept heads, `hr_head`, `org_admin`. `super_admin` (1000) and `tenant_admin` (990) succeed (201) with the **identical payload**, and ranks < 40 correctly get 403. So it is not an authorization denial — it is a server error that blocks user creation for the entire admin middle tier.
@@ -132,7 +134,33 @@ Each case names the expectation and, where relevant, the backend table/error to 
 | TD-03 | Concurrent double-edit → lost-update detection | **[HAVE]** | concurrency suite |
 | **TD-04** | **Edit dialog round-trip** — change assignee, due date, rank, notes through the dialog → Save → all persisted → re-render (several existing "record-bug" probes suggest known dialog issues here) | **[WEAK]** | `task.tasks` |
 
-### 3.7 Cross-tenant & Capability / Roles (cross-cutting)
+### 3.7 Responsive & UI-quality (every route × phone / tablet / laptop / desktop)
+
+Engine: `visual.mjs` (via `suites/visual/responsive-audit.mjs`). Runs each route at
+**5 device modes** — phone 390, small phone 360, **tablet 820**, **laptop 1366**,
+desktop 1920 — and reports only *measurable* defects, with a screenshot per
+viewport as evidence. Run one representative role per privilege band (the DOM
+shape is the same; only data/nav differ), e.g. `org_admin,sales_representative,read_only`.
+
+| ID | Case | Status | Detail |
+|---|---|---|---|
+| UI-R-01 | Document never scrolls sideways; no element spills past the right edge | **[HAVE]** | body-overflow + overflowing-element scan |
+| UI-R-02 | Tap targets ≥ 44×44, body text ≥ 12px, no overlapping controls (phone/tablet) | **[HAVE]** | a11y/geometry scans |
+| **UI-R-03** | **Tab strip stays usable on every viewport** — no tab clipped off the edge, no overflow without a scroll affordance, no ugly multi-row wrap on mobile. *Motivating bug: "the Follow-ups tab looks very odd in mobile view."* | **[CODE ADDED]** | new `tabStrip` measurement in `visual.mjs`; flagged per viewport, `⚠ TABS` in the runner log |
+| **UI-R-04** | **Disabled-state integrity** — a control that looks disabled is genuinely inert, not just styled/backend-guarded. *Motivating requirement: "UI is clean & attractive — not only html hide/show, backend, also disabled."* | **[CODE ADDED]** | new `fakeDisabled` measurement; `⚠ FAKE-DISABLED` in the runner log |
+| UI-R-05 | Screenshot per route × viewport saved for human review of "attractiveness" (the subjective layer objective checks can't grade) | **[HAVE]** | `results/screenshots/` |
+
+> **How UI-R-03 / UI-R-04 were added (code only, not executed per request).** Both
+> are new in-page measurements folded into the existing `measure()` so they run at
+> all 5 viewports with zero extra passes: `tabStrip` inspects the shared `PageTabs`
+> `<nav aria-label><a>` bar (tab count, row count, container overflow, scrollable-X,
+> clipped tabs); `fakeDisabled` finds interactive controls that *look* disabled
+> (`.disabled` / `aria-disabled` / `cursor:not-allowed` / opacity<0.55) yet are not
+> inert (`disabled` / `pointer-events:none` / `inert` / `fieldset[disabled]`).
+> Findings carry the screenshot path and a concrete fix. To run when ready:
+> `npm run visual` (or `node suites/visual/responsive-audit.mjs org_admin`).
+
+### 3.8 Cross-tenant & Capability / Roles (cross-cutting)
 
 | ID | Case | Status |
 |---|---|---|
