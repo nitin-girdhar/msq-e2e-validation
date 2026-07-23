@@ -1,9 +1,14 @@
 // CONCURRENCY: two authorized editors change the SAME lead field at the same
-// time. PATCH /api/leads/:id has no optimistic-lock guard (no updated_at / If-
-// Match / version check on the write), so this probes whether the second write
-// silently clobbers the first with no conflict signal — the classic lost
-// update. We change outcome_comment (free text, non-destructive), verify the
-// final value in the DB, and restore it afterwards.
+// time. This probes whether the second write silently clobbers the first with
+// no conflict signal — the classic lost update. We change last_name (free text,
+// non-destructive), verify the final value in the DB, and restore it afterwards.
+//
+// PATCH /api/leads/:id now supports optimistic concurrency via the
+// `expected_updated_at` token, so both actors read the lead first and send the
+// version they opened — the same thing LeadEditModal does. The token is
+// OPTIONAL by design (server-to-server callers may still want last-writer-wins),
+// so a caller that omits it is deliberately unguarded and this suite would not
+// detect a regression in that path.
 //
 //   node suites/concurrency/lms-lead-lost-update.mjs
 import { APPS, record, roleMeta } from '../../lib.mjs';
@@ -18,13 +23,16 @@ if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit
 // A lead in the org shared by our two editors (org_admin + org_manager both on
 // FitClass - Gurgaon per roles.json).
 const org = roleMeta('org_admin').org;
-const row = one(`SELECT l.id, COALESCE(l.outcome_comment,'')
+// NOTE: use last_name, not outcome_comment. outcome_comment only persists
+// alongside an outcome (the DB trigger NULLs it otherwise), so a race on that
+// field would be testing the outcome rules rather than concurrency.
+const row = one(`SELECT l.id, COALESCE(l.last_name,'')
   FROM lms.marketing_leads l JOIN entity.organizations o ON o.id=l.org_id
   WHERE o.name=${lit(org)} AND l.is_active AND NOT l.is_deleted
   ORDER BY l.created_at DESC LIMIT 1`);
 if (!row) { console.log(`No editable lead found in ${org} — aborting`); process.exit(0); }
 const [leadId, original] = row;
-console.log(`Lead ${leadId} in ${org} — baseline outcome_comment="${original}"`);
+console.log(`Lead ${leadId} in ${org} — baseline last_name="${original}"`);
 
 const A = await actor('org_admin');
 const B = await actor('org_manager');
@@ -32,17 +40,29 @@ const stamp = Date.now();
 const valA = `E2E-A-${stamp}`;
 const valB = `E2E-B-${stamp}`;
 
+// Model what a real editor does: open the lead, then save the version you saw.
+// Both actors read first, so both hold the SAME updated_at — exactly the state
+// two people editing the same record concurrently are in.
+const openedA = await apiGet(A, `${LMS}/api/leads/${leadId}`);
+const openedB = await apiGet(B, `${LMS}/api/leads/${leadId}`);
+const verA = openedA.body?.data?.updated_at;
+const verB = openedB.body?.data?.updated_at;
+if (!verA || !verB) { console.log('Could not read updated_at for both editors — aborting'); process.exit(0); }
+const expectedA = new Date(verA).toISOString();
+const expectedB = new Date(verB).toISOString();
+console.log(`Both editors opened version ${expectedA} (identical: ${expectedA === expectedB})`);
+
 const [ra, rb] = await simultaneously([
-  () => apiPatch(A, `${LMS}/api/leads/${leadId}`, { outcome_comment: valA }),
-  () => apiPatch(B, `${LMS}/api/leads/${leadId}`, { outcome_comment: valB }),
+  () => apiPatch(A, `${LMS}/api/leads/${leadId}`, { last_name: valA, expected_updated_at: expectedA }),
+  () => apiPatch(B, `${LMS}/api/leads/${leadId}`, { last_name: valB, expected_updated_at: expectedB }),
 ]);
 console.log(`org_admin PATCH -> ${ra.status}; org_manager PATCH -> ${rb.status}`);
 
 // Settle, then read the source of truth.
 await new Promise((r) => setTimeout(r, 500));
-const finalRow = one(`SELECT COALESCE(outcome_comment,'') FROM lms.marketing_leads WHERE id=${lit(leadId)}`);
+const finalRow = one(`SELECT COALESCE(last_name,'') FROM lms.marketing_leads WHERE id=${lit(leadId)}`);
 const finalVal = finalRow ? finalRow[0] : '(gone)';
-console.log(`DB final outcome_comment="${finalVal}"`);
+console.log(`DB final last_name="${finalVal}"`);
 
 const bothAccepted = ra.status < 300 && rb.status < 300;
 const conflictSignalled = [ra.status, rb.status].includes(409);
@@ -64,6 +84,6 @@ if (bothAccepted && !conflictSignalled) {
 }
 
 // Cleanup — restore original value via the winning editor.
-await apiPatch(A, `${LMS}/api/leads/${leadId}`, { outcome_comment: original }).catch(() => {});
+await apiPatch(A, `${LMS}/api/leads/${leadId}`, { last_name: original }).catch(() => {});
 await A.close(); await B.close();
 console.log('done.');

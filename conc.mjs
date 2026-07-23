@@ -42,3 +42,5 @@ export async function simultaneously(thunks) {
 export async function apiGet(a, url, opts = {}) { return readResp(await a.request.get(url, opts)); }
 export async function apiPost(a, url, data, opts = {}) { return readResp(await a.request.post(url, { data, ...opts })); }
 export async function apiPatch(a, url, data, opts = {}) { return readResp(await a.request.patch(url, { data, ...opts })); }
+export async function apiPut(a, url, data, opts = {}) { return readResp(await a.request.put(url, { data, ...opts })); }
+export async function apiDelete(a, url, opts = {}) { return readResp(await a.request.delete(url, opts)); }

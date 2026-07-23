@@ -1,12 +1,15 @@
-// CONCURRENCY: two users edit the SAME task's title at the same time. Like the
-// lead case, PATCH /api/tasks/:id is a partial last-writer-wins update with no
-// version guard, so this checks whether a simultaneous edit silently loses one
-// user's change with no conflict signal. Non-destructive: we create a throwaway
-// task, race two title edits, verify the DB, then soft-delete our task.
+// CONCURRENCY: two users edit the SAME task's title at the same time. This
+// checks whether a simultaneous edit silently loses one user's change with no
+// conflict signal. Non-destructive: we create a throwaway task, race two title
+// edits, verify the DB, then soft-delete our task.
+//
+// PATCH /api/tasks/:id supports optimistic concurrency via `expected_updated_at`
+// (OPTIONAL by design — a caller that omits it still gets last-writer-wins), so
+// both editors read the task first and send the version they opened.
 //
 //   node suites/concurrency/todo-task-double-edit.mjs
 import { APPS, record } from '../../lib.mjs';
-import { actor, apiPost, apiPatch, simultaneously } from '../../conc.mjs';
+import { actor, apiGet, apiPost, apiPatch, simultaneously } from '../../conc.mjs';
 import { dbReachable, one, scalar, lit } from '../../db.mjs';
 
 const TOOL = 'concurrency';
@@ -38,11 +41,22 @@ const taskId = created.body?.data?.id || created.body?.id
 if (!taskId) { console.log('No task id resolved — aborting'); await e1.close(); await e2.close(); process.exit(0); }
 console.log(`Task ${taskId}`);
 
-// 2. Two simultaneous title edits.
+// 2. Both editors open the task, then race two title edits against the version
+// they each saw — the same `expected_updated_at` token TaskDetailDrawer sends.
+const o1 = await apiGet(e1, `${TODO}/api/tasks/${taskId}`);
+const o2 = await apiGet(e2, `${TODO}/api/tasks/${taskId}`);
+const v1 = o1.body?.data?.updated_at, v2 = o2.body?.data?.updated_at;
+if (!v1 || !v2) {
+  console.log('Could not read updated_at for both editors — aborting');
+  await e1.close(); await e2.close(); process.exit(0);
+}
+const exp1 = new Date(v1).toISOString(), exp2 = new Date(v2).toISOString();
+console.log(`Both editors opened version ${exp1} (identical: ${exp1 === exp2})`);
+
 const titleA = `E2E-A-${stamp}`, titleB = `E2E-B-${stamp}`;
 const [r1, r2] = await simultaneously([
-  () => apiPatch(e1, `${TODO}/api/tasks/${taskId}`, { title: titleA }),
-  () => apiPatch(e2, `${TODO}/api/tasks/${taskId}`, { title: titleB }),
+  () => apiPatch(e1, `${TODO}/api/tasks/${taskId}`, { title: titleA, expected_updated_at: exp1 }),
+  () => apiPatch(e2, `${TODO}/api/tasks/${taskId}`, { title: titleB, expected_updated_at: exp2 }),
 ]);
 console.log(`${EDITORS[0]} PATCH -> ${r1.status}; ${EDITORS[1]} PATCH -> ${r2.status}`);
 

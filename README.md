@@ -76,6 +76,35 @@ npm run conc:hr        # HR leave-approval race
 npm run report         # regenerate results/SUMMARY.md from existing findings
 ```
 
+## Layers at a glance
+
+| Layer | What it proves | Entry point |
+| --- | --- | --- |
+| **Preflight** | The product still matches what the suites assume (tables, columns, roles, routes). Fails fast on drift. | `npm run preflight` |
+| **Breadth crawl** | Every role can open every route; all controls render and nothing throws. | `npm run crawl:*` |
+| **Role matrix** | Real writes attempted as **all 19 roles**, graded allow/deny — catches privilege escalation *and* blocked-legit-user. | `npm run matrix:*` |
+| **Cross-tenant** | Tenant B cannot see, read or modify tenant A's data. | `npm run tenant` |
+| **Capability toggle** | Turning a grant off/on actually hides the tab/page **and** blocks the API. | `npm run capability` |
+| **Concurrency** | Two users on one record behave safely. | `npm run conc:*` |
+| **Visual** | Layout holds up on phone/tablet/laptop/desktop. | `npm run visual` |
+| **Analysis** | Tab visibility matches route reachability. | `npm run analyze:tabs` |
+
+### Role matrix (`matrix.mjs`)
+
+The single most important addition: instead of testing a write as one hardcoded
+role, `runRoleMatrix()` runs it as **every** role and grades the result against a
+rank threshold, reporting the two failure directions separately because they are
+different bugs:
+
+- **over-permitted** — a role that should be rejected succeeded → privilege
+  escalation (graded `high`, or `critical` for credential-issuing endpoints);
+- **under-permitted** — a role that should be allowed got 403/404 → a broken
+  feature for a legitimate user.
+
+Grading uses an optional `verify()` that re-reads Postgres, so a `2xx` that
+changed nothing is **not** counted as "allowed" — which is exactly how the
+silent-drop bug in `PATCH /api/leads/:id` was caught.
+
 ## What each layer does
 
 - **Deep crawl** (`crawl.mjs` via `driver.mjs`) — for each role × each route it
@@ -95,6 +124,89 @@ npm run report         # regenerate results/SUMMARY.md from existing findings
 - **Backend verification** (`db.mjs`) — suites that perform a write assert on
   real rows (`q`, `one`, `scalar`, `count`) so "the screen said OK" is backed by
   "the row actually changed / didn't".
+
+### Cross-tenant isolation (`suites/tenant/`)
+
+Every other suite runs inside one tenant, so it can only prove *role*
+boundaries. This one logs in as a **second tenant** (MSquare Professionals,
+`*@msq.ggn.in` — see `crossTenantActors` in `roles.json`) and attacks the first
+(FitClass) four ways:
+
+1. **List scoping** — every id returned by a list endpoint is looked up in the
+   database and checked against the caller's tenant. A leak is proven by data,
+   not inferred from row counts.
+2. **IDOR read** — fetch tenant A's lead / task / leave request by its real id.
+   Must 403/404 with no record in the body.
+3. **IDOR write** — PATCH tenant A's record. Must fail **and** leave the row
+   byte-identical (compared before/after in the DB). A "rejected" write that
+   still mutated is the worst outcome, so the suite restores the row and grades
+   it `critical`.
+4. **Capability-override scoping** — revoking a capability for a role in tenant A
+   must not change that role in tenant B, proving the tenant-scoped override is
+   genuinely scoped.
+
+All leaks are graded **critical**.
+
+**Why the super_admin control matters.** The suite also asserts that
+`super_admin` *can* still read across tenants. Without that probe, an API that
+denied everything (or a suite that never logged in) would look like perfect
+isolation. Preflight backs this up by failing if a tenant-B login is missing or
+if both configured tenants resolve to the same tenant id — otherwise the
+security check could return a false all-clear.
+
+### Capability toggling (`capability.mjs` + `suites/capability/`)
+
+Capabilities form a tree (`tool → page → tab → operation → scope`) in
+`iam.capabilities`, granted per role in `iam.role_capabilities` and resolved by
+`iam.fn_role_capability_matrix(tenant)` — where a **tenant-scoped row overrides
+the platform default**, and page/tab nodes inherit their parent's grant.
+
+Each case runs `baseline → revoke → observe → restore → re-observe`, comparing
+**four independent views** of the same truth:
+
+1. **resolver** — what `fn_role_capability_matrix` says;
+2. **session** — `GET {gateway}/auth/me` capability list (identity-service
+   re-resolves per call, so a change lands without re-login);
+3. **frontend** — is the nav link / tab actually rendered after reload;
+4. **backend** — does the guarded API still accept the call.
+
+The disagreements are the findings:
+
+| Disagreement | Meaning | Severity |
+| --- | --- | --- |
+| UI hides it, API still allows | capability is decorative; direct calls bypass it | high / critical |
+| API denies it, UI still shows | user invited into a dead end | medium |
+| resolver flips, session never does | cache not invalidating — revoking access does nothing | high |
+| grant doesn't return after restore | strands real users | high |
+
+**Safety.** This is the only suite that mutates authorization config, so it is
+reversible by construction: it never edits platform-default rows, only inserts a
+**tenant-scoped override** and deletes it to restore. Every override is journalled
+to `results/capability-overrides.json` *before* the write, so a killed run is
+recoverable from a cold process:
+
+```bash
+npm run capability:restore   # replays the journal and puts every grant back
+```
+
+A normal run also self-recovers any journal it finds before starting, so a stale
+revoke is never mistaken for the product's baseline.
+
+- **Tabs** — these products render tabs via the shared `PageTabs` component as
+  `<nav aria-label><a href aria-current>` (anchors, *not* `role="tab"`). The
+  crawler inventories them rather than clicking, because each tab is just a link
+  to a route already crawled. The inventory is the valuable part: a tab only
+  exists when its capability is granted, so `analyze:tabs` cross-checks "tab
+  visible" against "route actually loads" and flags dead-end tabs — the recurring
+  page-guard-vs-service-guard mismatch in this codebase.
+
+- **Visual / responsive** (`suites/visual/`) — renders each route at 5 viewports
+  (360, 390, 820, 1366, 1920) and reports **measurable** defects only: document
+  horizontal scroll, elements past the right edge, tap targets under 44×44,
+  text under 12px, and overlapping interactive controls. A screenshot per
+  viewport is saved to `results/screenshots/` as evidence. Deliberately
+  objective — "looks unprofessional" is subjective, but a phone that scrolls
+  sideways is a bug anyone will sign off.
 
 - **Concurrency** (`suites/concurrency/`) — two authenticated actors hit the same
   record simultaneously:

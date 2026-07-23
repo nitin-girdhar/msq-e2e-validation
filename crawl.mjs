@@ -56,36 +56,40 @@ async function leakedErrorBanner(page) {
   return null;
 }
 
-// Discover in-page tabs and click each, recording render + errors per tab.
+// Discover in-page tabs.
+//
+// These products render tabs through the shared PageTabs component as
+//   <nav aria-label="..."><a href="/route" aria-current="page">Label</a></nav>
+// i.e. ANCHORS, not role="tab" or buttons. (An earlier selector looked for
+// `nav[aria-label] button` and therefore matched nothing.)
+//
+// We inventory rather than click: each tab is just a link to a route the crawl
+// already visits, so clicking only navigates away and disrupts the rest of this
+// route's control sweep. The inventory is the valuable part — a tab only exists
+// when the capability behind it is granted (see AttendanceTabs/LeaveTabs/
+// TasksTabs), so "which tabs does this role see" is an authorization signal we
+// can later cross-check against which routes that role can actually load.
 async function crawlTabs(page, log, ctx) {
-  const tabs = page.locator('[role="tab"], [role="tablist"] button, nav[aria-label] button, .tabs button');
-  const count = Math.min(await tabs.count().catch(() => 0), 10);
-  const seen = [];
+  const tabs = page.locator(
+    'nav[aria-label] a, [role="tab"], [role="tablist"] a, [role="tablist"] button, .tabs a, .tabs button'
+  );
+  const count = Math.min(await tabs.count().catch(() => 0), 12);
+  const out = [];
+  const seen = new Set();
   for (let i = 0; i < count; i++) {
-    const tab = tabs.nth(i);
-    const label = (await tab.innerText().catch(() => '')).trim().slice(0, 40) || `tab#${i}`;
-    if (seen.includes(label)) continue;
-    seen.push(label);
-    const m = mark(log);
-    await tab.click({ timeout: 3000 }).catch(() => {});
-    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
-    const d = delta(log, m);
-    const banner = await leakedErrorBanner(page);
-    if (banner || d.pageErrors.length || d.badRequests.some((b) => /^5\d\d /.test(b))) {
-      record(ctx.tool, {
-        severity: banner ? 'medium' : (d.pageErrors.length ? 'high' : 'medium'),
-        role: ctx.role, tool: ctx.tool, page: `${ctx.label} > tab '${label}'`,
-        scenario: `Open the '${label}' tab as ${ctx.role}`,
-        expected: 'Tab content renders with no page/5xx errors and no leaked backend error banner',
-        actual: banner ? `Leaked error banner: "${banner}"` : `pageErrors=${d.pageErrors.length} bad=${d.badRequests.length}`,
-        evidence: JSON.stringify(d).slice(0, 600),
-        proposedSolution: banner
-          ? 'Map the backend error to a friendly, role-appropriate empty/permission state instead of rendering the raw message; or gate the tab so it is not shown to roles the API will reject.'
-          : 'Investigate the failing request/handler surfaced in evidence and add error boundaries around the tab panel.',
-      });
-    }
+    const t = tabs.nth(i);
+    const [label, href, current] = await Promise.all([
+      t.innerText().catch(() => ''),
+      t.getAttribute('href').catch(() => null),
+      t.getAttribute('aria-current').catch(() => null),
+    ]);
+    const clean = (label || '').trim().slice(0, 40);
+    const key = `${clean}|${href ?? ''}`;
+    if (!clean || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ label: clean, href, active: current === 'page' });
   }
-  return seen;
+  return out;
 }
 
 // Open each dropdown/select, enumerate its options, then dismiss it.

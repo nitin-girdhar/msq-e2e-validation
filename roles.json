@@ -33,5 +33,20 @@
   "secondaryActors": [
     { "role": "sales_representative", "actor": "rep2", "email": "rep2@fitclass.ggn.in", "org": "FitClass - Gurgaon" },
     { "role": "sales_representative", "actor": "rep3", "email": "rep3@fitclass.ggn.in", "org": "FitClass - Gurgaon" }
+  ],
+
+  "_tenants": "Two seeded tenants. Everything above lives in FitClass (tenant A). The crossTenant block below is tenant B, used to prove one tenant cannot see or touch the other's data. MSquare Gurgaon HQ mirrors FitClass Connaught Place: it carries the same department ladder.",
+  "tenants": [
+    { "key": "fitclass", "name": "FitClass", "primary": true, "org": "FitClass - Gurgaon", "deptOrg": "FitClass - Connaught Place" },
+    { "key": "msquare", "name": "MSquare Professionals", "primary": false, "org": "MSquare Professionals - Gurgaon HQ", "deptOrg": "MSquare Professionals - Gurgaon HQ" }
+  ],
+
+  "crossTenantActors": [
+    { "stateKey": "msq_tenant_admin", "role": "tenant_admin",         "email": "tenant.admin@msq.ggn.in", "rank": 990, "tenant": "MSquare Professionals", "org": "MSquare Professionals - Gurgaon HQ" },
+    { "stateKey": "msq_org_admin",    "role": "org_admin",            "email": "admin@msq.ggn.in",        "rank": 980, "tenant": "MSquare Professionals", "org": "MSquare Professionals - Gurgaon HQ" },
+    { "stateKey": "msq_hr_head",      "role": "hr_head",              "email": "hr_head@msq.ggn.in",      "rank": 75,  "tenant": "MSquare Professionals", "org": "MSquare Professionals - Gurgaon HQ" },
+    { "stateKey": "msq_org_manager",  "role": "org_manager",          "email": "manager@msq.ggn.in",      "rank": 60,  "tenant": "MSquare Professionals", "org": "MSquare Professionals - Gurgaon HQ" },
+    { "stateKey": "msq_rep1",         "role": "sales_representative", "email": "rep1@msq.ggn.in",         "rank": 20,  "tenant": "MSquare Professionals", "org": "MSquare Professionals - Gurgaon HQ" },
+    { "stateKey": "msq_read_only",    "role": "read_only",            "email": "viewer@msq.ggn.in",       "rank": 0,   "tenant": "MSquare Professionals", "org": "MSquare Professionals - Gurgaon HQ" }
   ]
 }

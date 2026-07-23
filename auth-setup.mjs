@@ -79,6 +79,8 @@ async function login({ stateKey, email }) {
 let logins = [
   ...cfg.roles.map((r) => ({ stateKey: r.role, email: r.email })),
   ...(cfg.secondaryActors ?? []).map((a) => ({ stateKey: a.actor, email: a.email })),
+  // Tenant B — required by the cross-tenant isolation suite.
+  ...(cfg.crossTenantActors ?? []).map((a) => ({ stateKey: a.stateKey, email: a.email })),
 ];
 
 // AUTH_ONLY=org_admin,rep2  → refresh just those storage states (fast re-login

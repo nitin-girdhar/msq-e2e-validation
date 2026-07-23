@@ -15,6 +15,11 @@ export const cfg = JSON.parse(fs.readFileSync(path.join(dir, 'roles.json'), 'utf
 export const APPS = cfg.apps;
 export const ROLES = cfg.roles.map((r) => r.role);
 export const SECONDARY = cfg.secondaryActors ?? [];
+// Tenant B logins, used to prove cross-tenant isolation.
+export const CROSS_TENANT = cfg.crossTenantActors ?? [];
+export const TENANTS = cfg.tenants ?? [];
+export const primaryTenant = () => TENANTS.find((t) => t.primary) ?? TENANTS[0] ?? null;
+export const otherTenant = () => TENANTS.find((t) => !t.primary) ?? null;
 export const authDir = path.join(dir, '.auth');
 export const resultsDir = path.join(dir, 'results');
 
