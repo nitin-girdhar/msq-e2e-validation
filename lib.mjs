@@ -1,5 +1,10 @@
 // Shared helpers for role-based UI exploration.
-// Usage: node your-script.mjs   (from the e2e/ folder)
+//
+// PATH CONTRACT: this file lives at the e2e ROOT. All state (.auth/), config
+// (roles.json), and output (results/) are resolved relative to THIS file, not
+// to the caller. That is what makes it safe to keep suite scripts in
+// suites/<tool>/ subfolders — they only ever import from here, so no suite
+// needs to know how deep it is nested.
 import { chromium } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -9,12 +14,24 @@ export const dir = path.dirname(fileURLToPath(import.meta.url));
 export const cfg = JSON.parse(fs.readFileSync(path.join(dir, 'roles.json'), 'utf8'));
 export const APPS = cfg.apps;
 export const ROLES = cfg.roles.map((r) => r.role);
+export const SECONDARY = cfg.secondaryActors ?? [];
+export const authDir = path.join(dir, '.auth');
+export const resultsDir = path.join(dir, 'results');
 
-// Opens a browser page already authenticated as `role`.
+// Absolute path to a stored storageState. `key` is a role name (org_admin) or
+// a secondary-actor label (rep2). Keeps every caller off path math.
+export const authFile = (key) => path.join(authDir, `${key}.json`);
+
+// Full role descriptor from roles.json (rank, dept, scope, org, email).
+export function roleMeta(role) {
+  return cfg.roles.find((r) => r.role === role) ?? null;
+}
+
+// Opens a browser page already authenticated as `stateKey` (role or actor).
 // Collects console errors, page errors, and failed/5xx network calls.
-export async function openAs(role, { headless = true } = {}) {
-  const statePath = path.join(dir, '.auth', `${role}.json`);
-  if (!fs.existsSync(statePath)) throw new Error(`No storage state for ${role}; run auth-setup.mjs first`);
+export async function openState(stateKey, { headless = true } = {}) {
+  const statePath = authFile(stateKey);
+  if (!fs.existsSync(statePath)) throw new Error(`No storage state for '${stateKey}'; run auth-setup.mjs first`);
   const browser = await chromium.launch({ headless });
   const ctx = await browser.newContext({ storageState: statePath });
   const page = await ctx.newPage();
@@ -28,10 +45,15 @@ export async function openAs(role, { headless = true } = {}) {
   return { browser, ctx, page, log };
 }
 
+// Back-compat alias — the original API. `openAs('org_admin')` still works.
+export const openAs = openState;
+
 // Navigate and report what actually rendered.
 export async function visit(page, url) {
   const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch((e) => ({ err: e.message }));
-  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+  // Many pages hold a long-lived SSE stream (/api/notifications/stream) open, so
+  // networkidle never fires — cap the wait low and fall back to a settle delay.
+  await page.waitForLoadState('networkidle', { timeout: 3500 }).catch(() => {});
   const body = await page.locator('body').innerText().catch(() => '');
   return {
     url: page.url(),
@@ -45,15 +67,21 @@ export async function visit(page, url) {
   };
 }
 
-// Append a finding to results/findings-<area>.json
+// Append a finding to results/findings-<area>.json.
+//
+// Finding shape (fields beyond `severity` are free-form and all preserved):
+//   { severity, role, tool, page, scenario, expected, actual, evidence,
+//     proposedSolution }
+// `severity` should be one of: critical | high | medium | low | info.
 export function record(area, finding) {
-  const f = path.join(dir, 'results', `findings-${area}.json`);
+  fs.mkdirSync(resultsDir, { recursive: true });
+  const f = path.join(resultsDir, `findings-${area}.json`);
   const all = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : [];
-  all.push({ ...finding, at: new Date().toISOString() });
+  all.push({ tool: area, at: new Date().toISOString(), ...finding });
   fs.writeFileSync(f, JSON.stringify(all, null, 2));
 }
 
 export function save(area, name, data) {
-  fs.mkdirSync(path.join(dir, 'results'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'results', `${area}-${name}.json`), JSON.stringify(data, null, 2));
+  fs.mkdirSync(resultsDir, { recursive: true });
+  fs.writeFileSync(path.join(resultsDir, `${area}-${name}.json`), JSON.stringify(data, null, 2));
 }

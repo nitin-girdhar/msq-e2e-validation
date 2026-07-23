@@ -1,22 +1,24 @@
-// Logs in every seeded role through the real UI and saves a Playwright
-// storageState per role into .auth/. Run once before any exploration script.
+// Logs in every seeded role (and the secondary concurrency actors) through the
+// real UI and saves a Playwright storageState per login into .auth/. Run once
+// before any exploration/crawl script.
+//
+// Covers the full ladder read_only -> super_admin plus the department roles
+// (hr_head, sales_manager, ops_executive, ...) enumerated in roles.json, so a
+// single storageState exists for each distinct role the platform ships.
 //
 // Two things this must get right:
 //  1. Hydration — LoginForm is a client component; clicking submit before React
 //     attaches causes a native GET (credentials land in the URL). We wait for a
 //     React fiber on the <form> before touching it.
-//  2. /select-branch — users mapped to >1 org and rank < 90 are routed through a
-//     branch picker before the product app.
+//  2. /select-branch — users mapped to >1 org (super_admin, tenant_admin) are
+//     routed through a branch picker before the product app.
 import { chromium } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { cfg, dir, authDir, resultsDir } from './lib.mjs';
 
-const dir = path.dirname(fileURLToPath(import.meta.url));
-const cfg = JSON.parse(fs.readFileSync(path.join(dir, 'roles.json'), 'utf8'));
-const authDir = path.join(dir, '.auth');
 fs.mkdirSync(authDir, { recursive: true });
-fs.mkdirSync(path.join(dir, 'results'), { recursive: true });
+fs.mkdirSync(resultsDir, { recursive: true });
 
 async function waitForHydration(page) {
   await page.waitForFunction(() => {
@@ -26,9 +28,8 @@ async function waitForHydration(page) {
   }, null, { timeout: 20000 });
 }
 
-const results = [];
-
-for (const { role, email } of cfg.roles) {
+// One login attempt -> a saved storageState at .auth/<stateKey>.json.
+async function login({ stateKey, email }) {
   const browser = await chromium.launch();
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
@@ -47,13 +48,12 @@ for (const { role, email } of cfg.roles) {
     await page.locator('#password').fill(cfg.password);
     await page.locator('button[type="submit"]').click();
 
-    // Either the branch picker or the destination product app.
     await page.waitForURL((u) => !/\/login$/.test(u.pathname), { timeout: 25000 }).catch(() => {});
     await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
 
     if (/select-branch/.test(page.url())) {
       branchPicker = true;
-      const option = page.locator('button, [role="option"], li').filter({ hasText: /fitclass|itc/i }).first();
+      const option = page.locator('button, [role="option"], li').filter({ hasText: /fitclass|msquare|itc/i }).first();
       await option.click({ timeout: 10000 }).catch(() => {});
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
     }
@@ -61,16 +61,38 @@ for (const { role, email } of cfg.roles) {
     landedOn = page.url();
     if (/\/login/.test(landedOn)) status = 'stuck-on-login';
     if (/password=/.test(landedOn)) status = 'CREDENTIALS-IN-URL';
-    await ctx.storageState({ path: path.join(authDir, `${role}.json`) });
+    await ctx.storageState({ path: path.join(authDir, `${stateKey}.json`) });
   } catch (err) {
     status = `failed: ${err.message.split('\n')[0]}`;
   }
 
-  results.push({ role, email, status, landedOn, branchPicker, consoleErrors: errors.slice(0, 10) });
-  console.log(`${role.padEnd(24)} ${status.padEnd(16)} branch=${branchPicker ? 'Y' : 'n'} ${landedOn}`);
+  const rec = { stateKey, email, status, landedOn, branchPicker, consoleErrors: errors.slice(0, 10) };
+  console.log(`${stateKey.padEnd(26)} ${status.padEnd(18)} branch=${branchPicker ? 'Y' : 'n'} ${landedOn}`);
   if (errors.length) console.log(`   console errors (${errors.length}): ${errors[0]?.slice(0, 200)}`);
   await browser.close();
+  return rec;
 }
 
-fs.writeFileSync(path.join(dir, 'results', 'auth-setup.json'), JSON.stringify(results, null, 2));
-console.log('\nSaved storage states to .auth/');
+// Every distinct role uses its role name as the state key; secondary actors use
+// their actor label (rep2, rep3) so concurrency suites can open two same-role
+// contexts against distinct users.
+let logins = [
+  ...cfg.roles.map((r) => ({ stateKey: r.role, email: r.email })),
+  ...(cfg.secondaryActors ?? []).map((a) => ({ stateKey: a.actor, email: a.email })),
+];
+
+// AUTH_ONLY=org_admin,rep2  → refresh just those storage states (fast re-login
+// when a subset of sessions has expired / rotated).
+const only = (process.env.AUTH_ONLY || '').split(',').map((s) => s.trim()).filter(Boolean);
+if (only.length) logins = logins.filter((l) => only.includes(l.stateKey));
+
+const results = [];
+for (const l of logins) results.push(await login(l));
+
+fs.writeFileSync(path.join(resultsDir, 'auth-setup.json'), JSON.stringify(results, null, 2));
+const ok = results.filter((r) => r.status === 'ok').length;
+console.log(`\nSaved ${ok}/${results.length} storage states to .auth/`);
+if (ok < results.length) {
+  console.log('Failures:');
+  for (const r of results.filter((r) => r.status !== 'ok')) console.log(`  ${r.stateKey}: ${r.status}`);
+}

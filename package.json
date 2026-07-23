@@ -1,6 +1,21 @@
 {
   "name": "msq-e2e",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "End-to-end UI + backend validation harness across all MSQ platform tools and roles.",
+  "scripts": {
+    "auth": "node auth-setup.mjs",
+    "crawl:core": "node suites/core/deep-crawl-core.mjs",
+    "crawl:lookup": "node suites/core/deep-crawl-lookup.mjs",
+    "crawl:lms": "node suites/lms/deep-crawl-lms.mjs",
+    "crawl:hr": "node suites/hr/deep-crawl-hr.mjs",
+    "crawl:todo": "node suites/todo/deep-crawl-todo.mjs",
+    "conc:lms": "node suites/concurrency/lms-lead-lost-update.mjs",
+    "conc:hr": "node suites/concurrency/hr-leave-approval-race.mjs",
+    "conc:todo": "node suites/concurrency/todo-task-double-edit.mjs",
+    "report": "node report.mjs",
+    "all": "node run-all.mjs"
+  },
   "devDependencies": { "@playwright/test": "^1.49.1" }
 }

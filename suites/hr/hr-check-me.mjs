@@ -1,0 +1,11 @@
+import { openAs, APPS } from '../../lib.mjs';
+const BASE = APPS['hr-web'];
+const { browser, page } = await openAs('senior_sales_executive');
+const respPromise = page.waitForResponse((r) => r.url().includes('/attendance/me'), { timeout: 15000 }).catch(() => null);
+await page.goto(`${BASE}/attendance`, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+const resp = await respPromise;
+console.log('status:', resp ? resp.status() : 'none');
+const body = resp ? await resp.text().catch(() => '') : '';
+console.log('body:', body);
+console.log('browser today (toISOString):', await page.evaluate(() => new Date().toISOString()));
+await browser.close();

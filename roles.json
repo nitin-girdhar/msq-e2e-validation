@@ -8,12 +8,30 @@
     "todo-web": "http://localhost:3003",
     "lookup-admin": "http://localhost:3005"
   },
+  "_note": "One representative login per distinct role name (dev password Admin@12345). Global-ladder roles use the FitClass Gurgaon org (fitclass.ggn.in) so they share an org with the rep1/rep2/rep3 concurrency actors; department-ladder roles only exist in FitClass Connaught Place (fitclass.cp.in) and MSquare Gurgaon HQ, so they use fitclass.cp.in. There is no global hr_admin user in the seed — HR-admin authority is carried by hr_head (rank 75).",
   "roles": [
-    { "role": "org_admin", "email": "admin@fitclass.ggn.in" },
-    { "role": "org_sr_manager", "email": "srmanager@fitclass.ggn.in" },
-    { "role": "org_manager", "email": "manager@fitclass.ggn.in" },
-    { "role": "senior_sales_executive", "email": "senior.exec@fitclass.ggn.in" },
-    { "role": "sales_representative", "email": "rep1@fitclass.ggn.in" },
-    { "role": "read_only", "email": "viewer@fitclass.ggn.in" }
+    { "role": "super_admin",            "email": "super.admin@msquare.io",              "rank": 1000, "scope": "platform", "dept": null,         "org": "FitClass - Connaught Place" },
+    { "role": "tenant_admin",           "email": "tenant.admin@fitclass.cp.in",         "rank": 990,  "scope": "tenant",   "dept": null,         "org": "FitClass - Connaught Place" },
+    { "role": "org_admin",              "email": "admin@fitclass.ggn.in",               "rank": 980,  "scope": "org",      "dept": null,         "org": "FitClass - Gurgaon" },
+    { "role": "hr_head",                "email": "hr_head@fitclass.cp.in",              "rank": 75,   "scope": "dept",     "dept": "hr",         "org": "FitClass - Connaught Place", "actsAs": "hr_admin" },
+    { "role": "sales_head",             "email": "sales_head@fitclass.cp.in",           "rank": 70,   "scope": "dept",     "dept": "sales",      "org": "FitClass - Connaught Place" },
+    { "role": "ops_head",               "email": "ops_head@fitclass.cp.in",             "rank": 70,   "scope": "dept",     "dept": "operations", "org": "FitClass - Connaught Place" },
+    { "role": "org_sr_manager",         "email": "srmanager@fitclass.ggn.in",           "rank": 70,   "scope": "org",      "dept": null,         "org": "FitClass - Gurgaon" },
+    { "role": "sales_manager",          "email": "sales_manager@fitclass.cp.in",        "rank": 60,   "scope": "dept",     "dept": "sales",      "org": "FitClass - Connaught Place" },
+    { "role": "hr_manager",             "email": "hr_manager@fitclass.cp.in",           "rank": 60,   "scope": "dept",     "dept": "hr",         "org": "FitClass - Connaught Place" },
+    { "role": "ops_manager",            "email": "ops_manager@fitclass.cp.in",          "rank": 60,   "scope": "dept",     "dept": "operations", "org": "FitClass - Connaught Place" },
+    { "role": "admin_manager",          "email": "admin_manager@fitclass.cp.in",        "rank": 60,   "scope": "dept",     "dept": "admin",      "org": "FitClass - Connaught Place" },
+    { "role": "org_manager",            "email": "manager@fitclass.ggn.in",             "rank": 60,   "scope": "org",      "dept": null,         "org": "FitClass - Gurgaon" },
+    { "role": "senior_sales_executive", "email": "senior.exec@fitclass.ggn.in",         "rank": 40,   "scope": "org",      "dept": null,         "org": "FitClass - Gurgaon" },
+    { "role": "sales_senior_executive", "email": "sales_senior_executive@fitclass.cp.in","rank": 40,  "scope": "dept",     "dept": "sales",      "org": "FitClass - Connaught Place" },
+    { "role": "hr_executive",           "email": "hr_executive@fitclass.cp.in",         "rank": 25,   "scope": "dept",     "dept": "hr",         "org": "FitClass - Connaught Place" },
+    { "role": "ops_executive",          "email": "ops_executive@fitclass.cp.in",        "rank": 25,   "scope": "dept",     "dept": "operations", "org": "FitClass - Connaught Place" },
+    { "role": "admin_executive",        "email": "admin_executive@fitclass.cp.in",      "rank": 25,   "scope": "dept",     "dept": "admin",      "org": "FitClass - Connaught Place" },
+    { "role": "sales_representative",   "email": "rep1@fitclass.ggn.in",                "rank": 20,   "scope": "org",      "dept": null,         "org": "FitClass - Gurgaon" },
+    { "role": "read_only",              "email": "viewer@fitclass.ggn.in",              "rank": 0,    "scope": "org",      "dept": null,         "org": "FitClass - Gurgaon" }
+  ],
+  "secondaryActors": [
+    { "role": "sales_representative", "actor": "rep2", "email": "rep2@fitclass.ggn.in", "org": "FitClass - Gurgaon" },
+    { "role": "sales_representative", "actor": "rep3", "email": "rep3@fitclass.ggn.in", "org": "FitClass - Gurgaon" }
   ]
 }
