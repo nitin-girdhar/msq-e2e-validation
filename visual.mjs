@@ -108,9 +108,64 @@ async function measure(page, viewportWidth) {
       }
     }
 
+    // 6. Tab-strip responsiveness — the recurring "tabs look odd on mobile"
+    //    class (e.g. the Follow-ups tab). These products render tabs via the
+    //    shared PageTabs as <nav aria-label><a>. A tab strip is "odd" when it
+    //    overflows its container with no scroll affordance, wraps into a messy
+    //    multi-row block, or has tabs clipped past the container/viewport edge.
+    let tabStrip = null;
+    const tabContainers = [...document.querySelectorAll('nav[aria-label], [role="tablist"], .tabs')].filter(visible);
+    for (const cont of tabContainers) {
+      const tabs = [...cont.querySelectorAll('a[href], [role="tab"], button')].filter(visible);
+      if (tabs.length < 2) continue; // not a real tab strip
+      const cRect = cont.getBoundingClientRect();
+      const cs = getComputedStyle(cont);
+      const rows = new Set(tabs.map((t) => Math.round(t.getBoundingClientRect().top))).size;
+      const clipped = tabs
+        .filter((t) => { const r = t.getBoundingClientRect(); return r.right > cRect.right + 1 || r.left < cRect.left - 1 || r.right > vw + 1; })
+        .map((t) => label(t));
+      tabStrip = {
+        tabCount: tabs.length,
+        rows,
+        containerHeight: Math.round(cRect.height),
+        overflowsContainer: cont.scrollWidth > cont.clientWidth + 2,
+        scrollableX: /(auto|scroll)/.test(cs.overflowX),
+        clipped: clipped.slice(0, 6),
+        labels: tabs.map((t) => label(t)).slice(0, 12),
+      };
+      break; // measure the first real tab strip on the page
+    }
+
+    // 7. Disabled-state integrity — "clean & attractive, and genuinely disabled,
+    //    not just backend-guarded". A control that LOOKS disabled (faded / cursor
+    //    not-allowed / .disabled class / aria-disabled) must actually be inert.
+    //    If it is still clickable, the UI is doing authorization-by-appearance:
+    //    the button works if you click it (or tamper the class off), and only the
+    //    backend stops it — exactly the "html hide/show but not disabled" defect.
+    const interactive = 'button, a[href], [role="button"], input, select, textarea';
+    const looksDisabled = (el, s) =>
+      /(^|[\s_-])disabled([\s_-]|$)/i.test(el.className || '') ||
+      el.getAttribute('aria-disabled') === 'true' ||
+      s.cursor === 'not-allowed' ||
+      (parseFloat(s.opacity) > 0 && parseFloat(s.opacity) < 0.55);
+    const isInert = (el, s) =>
+      el.disabled === true ||
+      s.pointerEvents === 'none' ||
+      el.closest('[inert]') !== null ||
+      !!el.closest('fieldset[disabled]');
+    const fakeDisabled = [];
+    for (const el of document.querySelectorAll(interactive)) {
+      if (!visible(el)) continue;
+      const s = getComputedStyle(el);
+      if (looksDisabled(el, s) && !isInert(el, s)) {
+        fakeDisabled.push({ label: label(el), tag: el.tagName.toLowerCase(), cursor: s.cursor, opacity: s.opacity });
+        if (fakeDisabled.length >= 8) break;
+      }
+    }
+
     return {
       bodyOverflowPx: Math.max(0, Math.round(bodyOverflow)),
-      overflowing, smallTargets, tinyText, overlaps,
+      overflowing, smallTargets, tinyText, overlaps, tabStrip, fakeDisabled,
       hasHorizontalScrollbar: doc.scrollWidth > doc.clientWidth + 1,
     };
   }, { vw: viewportWidth, MIN_TAP, MIN_FONT });
@@ -185,6 +240,45 @@ export async function auditRoute(page, { url, tool, role, label }) {
         actual: `${m.overlaps.length} overlapping control pair(s): ${m.overlaps.map((o) => `"${o.a}" over "${o.b}" (${o.overlap}px)`).join('; ')}`,
         evidence: `screenshot: results/screenshots/${slug}.png | ${JSON.stringify(m.overlaps).slice(0, 300)}`,
         proposedSolution: 'Replace absolute/fixed positioning with flex/grid flow at this breakpoint, or allow the toolbar to wrap so actions never stack on top of one another.',
+      });
+    }
+
+    // Tab-strip rendering — the "Follow-ups tab looks odd on mobile" class.
+    // A clipped tab (cut off the edge) is a defect on any viewport; overflow
+    // without a scroll affordance, or an ugly multi-row wrap, is a mobile defect.
+    if (m.tabStrip) {
+      const ts = m.tabStrip;
+      const clippedBad = ts.clipped.length > 0;
+      const overflowNoScroll = ts.overflowsContainer && !ts.scrollableX;
+      const wrapsOnMobile = vp.mobile && ts.rows > 1;
+      if (clippedBad || overflowNoScroll || wrapsOnMobile) {
+        const reasons = [
+          clippedBad && `${ts.clipped.length} tab(s) clipped past the edge (${ts.clipped.join(', ')})`,
+          overflowNoScroll && `the strip overflows its container by width but has no horizontal-scroll affordance`,
+          wrapsOnMobile && `${ts.tabCount} tabs wrap onto ${ts.rows} rows`,
+        ].filter(Boolean);
+        record('visual', {
+          severity: (clippedBad || overflowNoScroll) ? 'medium' : 'low',
+          role, tool, page: `${label} @ ${vp.label}`,
+          scenario: `Tab strip rendering at ${vp.width}px (tabs: ${ts.labels.join(' | ')})`,
+          expected: 'The in-page tab bar stays on one row and every tab is fully reachable — either all tabs fit, or the strip scrolls horizontally within its own container',
+          actual: `Tab strip renders poorly: ${reasons.join('; ')}.`,
+          evidence: `screenshot: results/screenshots/${slug}.png | ${JSON.stringify(ts).slice(0, 400)}`,
+          proposedSolution: 'On narrow viewports make the tab strip a single horizontally-scrollable row (overflow-x:auto; flex-nowrap) with a scroll hint, or collapse the tabs into a dropdown/segmented control — never let tabs clip off the edge or stack into an unaligned multi-row block.',
+        });
+      }
+    }
+
+    // Disabled-state integrity — controls that look disabled but stay clickable.
+    if (m.fakeDisabled.length) {
+      record('visual', {
+        severity: 'medium',
+        role, tool, page: `${label} @ ${vp.label}`,
+        scenario: `Disabled-state integrity at ${vp.width}px`,
+        expected: 'A control that appears disabled (faded / cursor:not-allowed / .disabled / aria-disabled) is actually inert — [disabled], pointer-events:none, or inert — so it cannot be clicked or tampered back to life; authorization is enforced by real disabling, not just appearance or a backend rejection',
+        actual: `${m.fakeDisabled.length} control(s) look disabled but remain clickable, e.g. ${m.fakeDisabled.slice(0, 4).map((c) => `<${c.tag}> "${c.label}" (cursor:${c.cursor}, opacity:${c.opacity})`).join(', ')}`,
+        evidence: `screenshot: results/screenshots/${slug}.png | ${JSON.stringify(m.fakeDisabled).slice(0, 400)}`,
+        proposedSolution: 'Set the real disabled state on the element (the `disabled` attribute for buttons/inputs, or pointer-events:none + aria-disabled + tabindex=-1 for links/roles), not just a faded style. The UI gate is a convenience; keep the server check too, but the control must be genuinely inert so it cannot be clicked or un-hidden via DevTools.',
       });
     }
   }
