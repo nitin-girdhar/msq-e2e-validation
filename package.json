@@ -30,6 +30,10 @@
     "all": "node run-all.mjs",
     "capability": "node suites/capability/capability-toggle.mjs",
     "capability:restore": "node suites/capability/capability-toggle.mjs --restore-only",
+    "reg:issue1": "node suites/admin/create-user-rls-regression.mjs",
+    "reg:issue2": "node suites/capability/apiclients-fresh-revoke.mjs",
+    "reg:issue3": "node suites/lms/crossorg-subresource-authority.mjs",
+    "reg": "node suites/admin/create-user-rls-regression.mjs && node suites/capability/apiclients-fresh-revoke.mjs && node suites/lms/crossorg-subresource-authority.mjs",
     "tenant": "node suites/tenant/cross-tenant-isolation.mjs"
   },
   "devDependencies": {
