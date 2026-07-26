@@ -39,6 +39,7 @@ const STAGES = [
   { tag: 'lms', script: 'suites/lms/lms-crud-matrix.mjs' },
   { tag: 'hr', script: 'suites/hr/hr-admin-matrix.mjs' },
   { tag: 'hr', script: 'suites/hr/attendance-geofence-guard.mjs' },
+  { tag: 'hr', script: 'suites/hr/attendance-face-enroll.mjs' },
   { tag: 'hr', script: 'suites/hr/leave-lifecycle.mjs' },
   { tag: 'hr', script: 'suites/hr/regularization-lifecycle.mjs' },
   { tag: 'todo', script: 'suites/todo/task-visibility-matrix.mjs' },
