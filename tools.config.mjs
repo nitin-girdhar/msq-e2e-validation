@@ -28,16 +28,32 @@ export const TOOLS = {
   lookup: {
     label: 'Lookup Admin (lookup-admin)',
     app: 'lookup-admin',
-    home: '/dashboard',
-    // Lookup admin is a super/tenant/org-admin console; lower roles should be bounced.
+    // /dashboard redirects to /dashboard/m/platform — the module-grouped nav
+    // (Platform/LMS/HRMS/Tasks/Capabilities) replaced the old single flat
+    // dashboard card grid. See LookupTableDef.module in lookupTableConfig.ts.
+    home: '/dashboard/m/platform',
+    // Lookup admin is a super_admin-only console; lower roles should be bounced.
     expectAccessMinRank: 980,
     routes: [
       { id: 'dashboard', label: 'Dashboard', path: '/dashboard' },
+      { id: 'module-platform', label: 'Platform module', path: '/dashboard/m/platform' },
+      { id: 'module-lms', label: 'LMS module', path: '/dashboard/m/lms' },
+      { id: 'module-hr', label: 'HRMS module', path: '/dashboard/m/hr' },
+      { id: 'module-tasks', label: 'Tasks module', path: '/dashboard/m/tasks' },
+      { id: 'module-capabilities', label: 'Capabilities module', path: '/dashboard/m/capabilities' },
+      { id: 'capability-matrix', label: 'Capability Matrix', path: '/dashboard/capabilities/matrix' },
       { id: 'users', label: 'Users', path: '/dashboard/users' },
-      // [table] is dynamic; the crawler expands it from the dashboard's lookup list.
-      { id: 'lookups', label: 'Lookups', path: '/dashboard/lookups', dynamicChildOf: 'dashboard' },
+      // [table] is dynamic; the crawler expands it from each module pane's card
+      // list. One dynamicChildOf entry per module — driver.mjs's expandRoutes
+      // only walks a single parent per entry, and the 22 lookup tables are now
+      // split across 5 panes instead of one flat dashboard grid.
+      { id: 'lookups-platform', label: 'Lookups', path: '/dashboard/lookups', dynamicChildOf: 'module-platform' },
+      { id: 'lookups-lms', label: 'Lookups', path: '/dashboard/lookups', dynamicChildOf: 'module-lms' },
+      { id: 'lookups-hr', label: 'Lookups', path: '/dashboard/lookups', dynamicChildOf: 'module-hr' },
+      { id: 'lookups-tasks', label: 'Lookups', path: '/dashboard/lookups', dynamicChildOf: 'module-tasks' },
+      { id: 'lookups-capabilities', label: 'Lookups', path: '/dashboard/lookups', dynamicChildOf: 'module-capabilities' },
     ],
-    writeTables: ['entity.catalog_defaults', 'iam.users'],
+    writeTables: ['entity.catalog_defaults', 'iam.users', 'iam.role_capabilities'],
   },
 
   lms: {

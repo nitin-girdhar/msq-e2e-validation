@@ -24,14 +24,42 @@ if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit
 const { browser, page, log } = await openState(ROLE);
 const summary = [];
 
-// ── 1. Discover every lookup table the dashboard links to ──────────────────
+// ── 1. Discover every lookup table linked from the module nav ──────────────
+// The dashboard used to be one flat card grid; it now redirects to
+// /dashboard/m/platform and each table lives under its module pane
+// (Platform/LMS/HRMS/Tasks/Capabilities — see LookupTableDef.module). Walk the
+// left-rail nav to find every module link, then collect the lookup-table cards
+// each pane advertises, rather than assuming one page lists everything.
 await visit(page, `${APP}/dashboard`);
-const links = await page.locator('a[href*="/dashboard/lookups/"]')
+const moduleHrefs = await page.locator('aside a[href*="/dashboard/m/"]')
   .evaluateAll((els) => [...new Set(els.map((e) => e.getAttribute('href')))].filter(Boolean))
   .catch(() => []);
-console.log(`Dashboard advertises ${links.length} lookup tables`);
+console.log(`Nav advertises ${moduleHrefs.length} module(s): ${moduleHrefs.join(', ')}`);
 
-for (const href of links) {
+if (moduleHrefs.length === 0) {
+  record(TOOL, {
+    severity: 'high', role: ROLE, tool: TOOL, page: 'Lookup Admin / dashboard',
+    scenario: 'Read the module-grouped left nav (Platform/LMS/HRMS/Tasks/Capabilities)',
+    expected: 'The left rail lists at least the Platform module link (/dashboard/m/platform)',
+    actual: 'No aside a[href*="/dashboard/m/"] links found — the module nav is empty or the sidebar markup changed.',
+    evidence: `${APP}/dashboard -> ${page.url()}`,
+    proposedSolution: 'Confirm AppSidebar received ADMIN_NAV groups and the actor holds admin.lookups.manage/admin.roles.manage.',
+  });
+}
+
+const links = [];
+for (const href of moduleHrefs) {
+  await visit(page, APP + href);
+  const tableLinks = await page.locator('a[href*="/dashboard/lookups/"]')
+    .evaluateAll((els) => [...new Set(els.map((e) => e.getAttribute('href')))].filter(Boolean))
+    .catch(() => []);
+  console.log(`  ${href.padEnd(28)} -> ${tableLinks.length} table(s)`);
+  links.push(...tableLinks);
+}
+const uniqueLinks = [...new Set(links)];
+console.log(`Module panes advertise ${uniqueLinks.length} lookup table(s) total`);
+
+for (const href of uniqueLinks) {
   const slug = href.split('/').filter(Boolean).pop();
   const v = await visit(page, APP + href);
   const is404 = /404|could not be found/i.test(v.bodySnippet || '') || v.heading === '404';

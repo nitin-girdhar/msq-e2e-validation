@@ -71,6 +71,9 @@ Each case names the expectation and, where relevant, the backend table/error to 
 | **ID-08** | **Change user's org / branch** → user's data scope moves with them; they lose access to old-org records, gain new-org | **[GAP]** | org scope re-check |
 | **ID-09** | User-management writes graded across **all 19 roles** (only admins may create/edit/reset; escalation = high) | **[GAP]** | `runRoleMatrix` |
 | ID-10 | Unified role hierarchy: every seeded role resolves to expected rank; capability matrix per role | **[HAVE]** | `roles.json`, capability suite |
+| **ID-11** | Lookup-admin left nav groups every table by module (Platform/LMS/HRMS/Tasks/Capabilities); every module pane's cards open a working table page | **[HAVE]** | `lookup-module-nav.mjs` |
+| **ID-12** | Generic FK dropdown chaining (Country -> State -> City on Organizations' Create form, and a plain global-scope fk like Tenant) populates and gates on its `dependsOn` field | **[HAVE]** | `lookup-module-nav.mjs` |
+| **ID-13** | Capability Matrix screen (`/dashboard/capabilities/matrix`) writes a real tenant-scoped `iam.role_capabilities` override via `PUT /roles/:id/capabilities`, verified against the resolver **and** a live user's session, not just the UI | **[HAVE]** | `capability-matrix-ui.mjs` |
 
 ### 3.2 LMS / Leads  (`msq-lms`)
 
@@ -83,6 +86,7 @@ Each case names the expectation and, where relevant, the backend table/error to 
 | **LMS-05** | Reassign / transfer lead through the UI → owner changes, old owner loses it from My-Leads, new owner gains it | **[WEAK]** | `lms.marketing_leads.owner_id` |
 | **LMS-06** | Invalid field combinations rejected in-dialog (validation shown, no raw 500 banner) | **[GAP]** | negative UI |
 | LMS-07 | Cross-tenant IDOR on a lead (read + write) rejected, row byte-identical | **[HAVE]** | tenant suite |
+| **LMS-08** | WhatsApp-to-lead: send dialog opens and its template list resolves for a capable role; `GET .../whatsapp/templates` is gated by `lms.leads.whatsapp.send` (allowed for `org_admin`, denied for `read_only`). The actual send (external API call) is deliberately never fired. | **[HAVE]** | `lms-whatsapp-send.mjs` |
 
 ### 3.3 HR — Attendance  (`msq-hrms`)
 
@@ -98,6 +102,7 @@ Each case names the expectation and, where relevant, the backend table/error to 
 | **HR-A-08** | **UI button-state** — Check-in button **disabled** when outside fence / geo unresolved / already punched; **enabled** inside fence with photo captured | **[GAP]** | assert `isDisabled()` per state |
 | HR-A-09 | Team/admin attendance views gated: `canViewTeamAttendance` (≥ mgr), `canManageAttendance` (≥ hr_head); dept-scoped roles denied other depts | **[HAVE]** | `hr-admin-matrix.mjs` |
 | **HR-A-10** | **Attendance rules (geofence config) per tenant** — updating radius/require_photo in tenant A does not change tenant B's effective rules | **[GAP]** | `hr.attendance_rules`, tenant-scoped read |
+| **HR-A-11** | **Split-shift day classification** — `worked_minutes` sums paired check-in/check-out sessions (not `last_out - first_in`, so the inter-segment gap is unpaid); an off-window punch is accepted but flagged (`is_off_segment` / `has_off_window_punch`); `GET /hr/attendance/events` (no gateway route existed for it before this change) returns every punch of the day | **[HAVE]** | `attendance-split-shift.mjs`, `docs/ATTENDANCE_DAY_CLASSIFICATION.md` |
 
 ### 3.4 HR — Regularization / WFH  (`msq-hrms`)
 

@@ -40,11 +40,14 @@ const STAGES = [
   { tag: 'hr', script: 'suites/hr/hr-admin-matrix.mjs' },
   { tag: 'hr', script: 'suites/hr/attendance-geofence-guard.mjs' },
   { tag: 'hr', script: 'suites/hr/attendance-face-enroll.mjs' },
+  { tag: 'hr', script: 'suites/hr/attendance-split-shift.mjs' },
   { tag: 'hr', script: 'suites/hr/leave-lifecycle.mjs' },
   { tag: 'hr', script: 'suites/hr/regularization-lifecycle.mjs' },
   { tag: 'todo', script: 'suites/todo/task-visibility-matrix.mjs' },
   { tag: 'admin', script: 'suites/admin/lookup-crud.mjs' },
   { tag: 'admin', script: 'suites/admin/user-management.mjs' },
+  { tag: 'admin', script: 'suites/admin/lookup-module-nav.mjs' },
+  { tag: 'lms', script: 'suites/lms/lms-whatsapp-send.mjs' },
 
   // Cross-tenant isolation: log in as tenant B and try to see/touch tenant A.
   { tag: 'tenant', script: 'suites/tenant/cross-tenant-isolation.mjs' },
@@ -54,6 +57,7 @@ const STAGES = [
   // all agree. Runs late — it mutates authorization config (reversibly), so
   // everything that assumes baseline grants has already run.
   { tag: 'capability', script: 'suites/capability/capability-toggle.mjs' },
+  { tag: 'capability', script: 'suites/admin/capability-matrix-ui.mjs' },
 
   // Multi-user conflicts.
   { tag: 'concurrency', script: 'suites/concurrency/lms-lead-lost-update.mjs' },

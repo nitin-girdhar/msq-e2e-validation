@@ -74,6 +74,13 @@ node run-all.mjs --only=lms,hr --skip-auth
 npm run crawl:lms      # deep-crawl Leads/CRM for every role
 npm run conc:hr        # HR leave-approval race
 npm run report         # regenerate results/SUMMARY.md from existing findings
+
+# 3a. Newest additions (module-grouped lookup-admin nav, capability matrix,
+#     WhatsApp-to-lead, split-shift attendance — see "Recently added coverage" below)
+npm run admin:module-nav
+npm run admin:capability-matrix-ui
+npm run lms:whatsapp
+npm run hr:split-shift
 ```
 
 ## Layers at a glance
@@ -246,6 +253,27 @@ Secondary same-org actors `rep2`, `rep3` exist for concurrency tests.
 
 > There is no global `hr_admin` user in the seed — HR-admin authority is carried
 > by `hr_head` (rank 75).
+
+## Recently added coverage
+
+Four product changes landed together (lookup-admin's module-grouped nav +
+generic FK dropdowns + a new Capabilities admin screen, WhatsApp-to-lead, and
+split-shift attendance day classification). Each got a suite, plus one
+existing suite and the tool's route map needed fixing because the nav change
+moved lookup tables off the single flat dashboard they used to assume:
+
+| Suite | Proves |
+| --- | --- |
+| `suites/admin/lookup-module-nav.mjs` (`npm run admin:module-nav`) | The left rail groups tables by module (Platform/LMS/HRMS/Tasks/Capabilities), every module pane's cards actually open, and the generic FK chain on Organizations' Create form (Country -> State -> City, plus the plain Tenant fk) populates and disables correctly — the behavior that replaced the old hardcoded `GeoCascadeSelect`. |
+| `suites/admin/capability-matrix-ui.mjs` (`npm run admin:capability-matrix-ui`) | The new `/dashboard/capabilities/matrix` screen writes a real `iam.role_capabilities` override through its `PUT /roles/:id/capabilities` endpoint — UI, DB, resolver, and a live user's session are all checked to agree, the same four-way doctrine as `capability.mjs`, but exercising the admin UI's own round trip instead of a direct SQL write. Runs in the `capability` band (mutates authz config; reversible by construction — see that suite's header). |
+| `suites/lms/lms-whatsapp-send.mjs` (`npm run lms:whatsapp`) | The WhatsApp send dialog opens on a lead with a phone number and its template list resolves; `GET /leads/:id/whatsapp/templates` is capability-gated (`lms.leads.whatsapp.send`) — allowed for `org_admin`, denied for `read_only`. Never fires the actual send (a real external API call), consistent with the crawler's "inventory, don't fire" rule for side-effecting controls elsewhere in this harness. |
+| `suites/hr/attendance-split-shift.mjs` (`npm run hr:split-shift`) | `worked_minutes` sums paired check-in/check-out sessions instead of spanning first-in to last-out (a split-shift employee is no longer paid for the multi-hour gap between segments), an off-window punch is accepted-but-flagged (`is_off_segment` / `has_off_window_punch`), and `GET /hr/attendance/events` — which had **no gateway route at all** until this change — is actually reachable. See `docs/ATTENDANCE_DAY_CLASSIFICATION.md` for the full manual test plan this suite automates a slice of. |
+
+`suites/admin/lookup-crud.mjs` and `tools.config.mjs`'s `lookup` tool entry
+were also updated: they used to assume every lookup table was linked from one
+`/dashboard` page, which stopped being true once tables moved into per-module
+panes at `/dashboard/m/[module]` — both now discover tables by walking every
+module link first.
 
 ## Notes
 
