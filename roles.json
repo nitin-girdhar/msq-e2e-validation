@@ -6,6 +6,7 @@
     "lms-web": "http://localhost:3001",
     "hr-web": "http://localhost:3002",
     "todo-web": "http://localhost:3003",
+    "admin-web": "http://localhost:3004",
     "lookup-admin": "http://localhost:3005"
   },
   "_note": "One representative login per distinct role name (dev password Admin@12345). Global-ladder roles use the FitClass Gurgaon org (fitclass.ggn.in) so they share an org with the rep1/rep2/rep3 concurrency actors; department-ladder roles only exist in FitClass Connaught Place (fitclass.cp.in) and MSquare Gurgaon HQ, so they use fitclass.cp.in. There is no global hr_admin user in the seed — HR-admin authority is carried by hr_head (rank 75).",

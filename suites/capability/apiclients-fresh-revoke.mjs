@@ -1,4 +1,5 @@
-// Issue #2 regression — revoking lms.apiclients must block the API IMMEDIATELY.
+// Issue #2 regression — revoking the api-tokens capability must block the API
+// IMMEDIATELY.
 //
 // The api-clients endpoints mint/rotate/delete integration credentials. Their
 // server-side capability check read the process-level capability cache (5-minute
@@ -6,10 +7,22 @@
 // established, a revoke was ignored for up to 5 minutes and GET /api-clients kept
 // returning 200 — the capability's whole promise defeated within that window.
 //
+// UPDATED 2026-08-09: this suite originally tested `lms.apiclients`, which the
+// "API clients moved to Admin panel" refactor (msq-lms@8fc420c) DELETED — the
+// per-product LMS UI/capability was removed wholesale, and identity-service's
+// api-clients.controller.ts now gates list() on CAPABILITY.PLATFORM_API_TOKENS_
+// VIEW instead (see requireApiClientCapability call sites). Testing the old key
+// meant `grantedBefore` resolved falsy and the suite silently self-aborted at
+// the baseline check every run — exit 0, zero failures recorded, looking like a
+// pass while exercising nothing. That is exactly the kind of regression this
+// suite exists to catch, just one layer up (a dead capability key instead of a
+// stale cache) — worth remembering as the shape of bug to watch for whenever a
+// capability's OWNING FEATURE is relocated, not just renamed.
+//
 // The fix resolves the capability FRESH (hasCapabilityFresh, bypassing the TTL
-// cache) on these endpoints. This asserts that: revoke lms.apiclients for
-// org_admin, then WITHOUT any wait/poll call GET {gateway}/api-clients and require
-// a 403 on the very first call — no TTL grace. Restored in a finally block.
+// cache) on these endpoints. This asserts that: revoke platform.api_tokens.view
+// for org_admin, then WITHOUT any wait/poll call GET {gateway}/api-clients and
+// require a 403 on the very first call — no TTL grace. Restored in a finally block.
 //
 //   node suites/capability/apiclients-fresh-revoke.mjs
 import { record, roleMeta, cfg } from '../../lib.mjs';
@@ -19,7 +32,7 @@ import { tenantIdForOrg, resolvedCapabilities, setOverride, restoreAll, pendingO
 
 const TOOL = 'capability';
 const ROLE = 'org_admin';
-const CAP = 'lms.apiclients';
+const CAP = 'platform.api_tokens.view';
 const URL = `${cfg.gateway}/api-clients`;
 
 if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit(0); }

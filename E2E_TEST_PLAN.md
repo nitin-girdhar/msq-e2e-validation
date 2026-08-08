@@ -239,6 +239,63 @@ existing `record()` / `runRoleMatrix()` / `db.mjs` conventions.
 
 ---
 
+## 4b. New functionality since 2026-07-29 (this pass)
+
+The product repos (`msq-hrms`, `msq-lms`, `msq-core`; `msq-todo` had only minor
+fixes) shipped a batch of new features between the harness's last commit
+(2026-07-29) and this pass (2026-08-09). This section catalogues what shipped,
+what was **[GAP]** (zero coverage, now closed by a new suite this pass), and
+one real piece of **harness drift** this pass fixed along the way.
+
+### Harness drift fixed
+
+| Area | Drift | Fix |
+|---|---|---|
+| `tools.config.mjs` (LMS) | `api-clients` page/nav entry pointed at `/dashboard/api-clients`, which **msq-lms@8fc420c removed** (moved to the new admin-web console). The crawler was silently 404ing on a dead route and grading it as a product defect. | Route + `expectedNav` entries removed; added `bulk-assign` (the page that replaced it in the nav) instead. |
+| `roles.json` / `tools.config.mjs` | The new consolidated **admin-web** console (Team / API Tokens / Leave Admin / Attendance Admin, port 3004, `msq-core@543a91e`) was never registered — the harness had no idea this app existed. | Added `apps['admin-web']`, a new `TOOLS.admin` entry (routes, `expectAccessMinRank: 980`), and `suites/admin/deep-crawl-admin.mjs`. |
+| `suites/capability/apiclients-fresh-revoke.mjs`, `capability-toggle.mjs` | **Worse than dead route drift — a silently no-op'd regression guard.** Both tested the capability key `lms.apiclients`, which the same "moved to Admin panel" refactor **deleted outright** (zero references left in `msq-core`/`msq-lms`); the endpoint is now gated by `platform.api_tokens.view`/`.manage`. `apiclients-fresh-revoke.mjs`'s baseline check (`grantedBefore` falsy) made it self-abort every run — exit 0, zero findings, indistinguishable from a pass while testing nothing. This was the harness's only regression guard for Issue #2 (fresh-capability-resolve on credential endpoints). | Re-pointed both to `platform.api_tokens.view` / admin-web's `/dashboard/api-tokens`; added cases for the two new-this-pass capabilities (`hr.attendance.admin.geo_exceptions.view`, `lms.leads.assign.bulk`) that had no capability-matrix coverage at all. See §4c. |
+
+### New surfaces, now covered
+
+| ID | Case | Status | Verify |
+|---|---|---|---|
+| **HR-A-12** | **Per-employee geofence exceptions** (`hr.attendance_geo_exceptions`) — capability-gated CRUD (`HR_ATTENDANCE_ADMIN_GEO_EXCEPTIONS_VIEW`/`_MANAGE`), and the `remote_role` vs `wfh` labelling rule: a `remote_role` punch bypasses the fence but must NOT be recorded `is_wfh=true` (a field visit is not a WFH day) | **[HAVE]** | `suites/hr/geo-exceptions.mjs` |
+| **HR-A-13** | Ending a geo-exception (`PATCH is_active=false`) re-engages fence enforcement immediately | **[HAVE]** | same |
+| **HR-R-08** | **Configurable regularization backdate window** (`hr.attendance_rules.regularization_max_backdate_days`) — future date always rejected (not configurable), a date older than the window rejected naming the earliest acceptable date, tenant-wide default write (`scope: 'tenant'`) requires `tenant_admin`/`super_admin` even though an org's own `org_admin` holds the write capability | **[HAVE]** | `suites/hr/regularization-window.mjs` |
+| **HR-L-10** | **Leave-request / regularization "detail" modal** (`GET /leave/requests/:id`, `GET /attendance/regularizations/:id`) — full multi-level `approval_chain` + derived `pending_with`; own-scope IDOR check: even the assigned APPROVER gets 404 fetching someone else's request via this route (separate from their team/approvals list) | **[HAVE]** | `suites/hr/request-detail-approval-chain.mjs` |
+| — | `resolve-approvers.ts` role-name-vs-capability gap ([[hr-leave-approver-capability-gap]] in prior session notes) — **fixed** 2026-08-09, `hasCapability(tenantId, roleName, CAPABILITY.HR_LEAVE)` now gates the fallback-admin candidate list | **[FIXED]**, indirectly regression-guarded (non-empty `approval_chain`) | `request-detail-approval-chain.mjs`; a dedicated "role literally named org_admin without HR_LEAVE" case is still a good future addition |
+| **LMS-09** | **Bulk lead assignment** (`POST /assignments/bulk`) — three independent guards: actor rank ≥ SSE, target rank ≤ SSE (stricter than single-assign), all leads + assignee share one org; activity-log action_type (`assignment_created` vs `_reassigned`) verified per lead | **[HAVE]** | `suites/lms/bulk-assign.mjs` |
+| **LMS-10** | **Public partner API — lead report** (`GET {gateway}/public/v1/lead-report`, API-key auth, `lead-report:read` scope) — no-key/garbage-key/wrong-scope all rejected correctly; happy path via both `Authorization` header and the documented `?key=` query fallback | **[HAVE]** (single-org key path only) | `suites/lms/public-report-api.mjs` |
+| **LMS-11** | **Public partner API — single lead read** (`GET {gateway}/public/v1/leads/:id`) — an out-of-scope (wrong-org) lead returns **404, not 403**, with the identical shape as a genuinely nonexistent id (no enumeration oracle); `org_id` stripped from the response | **[HAVE]** | `suites/lms/public-read-api.mjs` |
+| **LMS-12** | **Admin console reachability** — Team / API Tokens / Leave Admin / Attendance Admin under the new admin-web app, rank-gated at `ANCHOR_RANK.ORG_ADMIN` (980) with an in-place "Access restricted" panel (not a redirect) below that, and each dashboard tile independently filtered by its own capability (fixed a prior bug where every tile incl. API Tokens showed regardless of capability) | **[HAVE]** (crawl only) | `suites/admin/deep-crawl-admin.mjs` |
+| **X-05** | admin-web tile-visibility-vs-capability consistency (does every VISIBLE tile's route actually load, does every HIDDEN one 403 at the API) — same shape as X-04 but for the new console | **[GAP]** | fold into a future `tab-authz-consistency.mjs` extension |
+| **LMS-13** | Meta-lead source relabelling (`959d85c`) and "CAPI trigger only fires when lead is actually from Meta" (`ebefae1`) — no e2e coverage; these are webhook/background-job paths the harness does not currently drive | **[GAP]** | needs a webhook-simulation suite, out of scope for this pass |
+
+## 4c. Capability-matrix coverage audit (asked explicitly this pass)
+
+`capability-toggle.mjs`'s `CASES` array is a small **hand-curated** list, not
+derived from the capability catalog — extending it is a manual step every time
+a capability is added or a guarded feature moves. Status as of this pass:
+
+| Capability | Guards | Coverage before this pass | Coverage now |
+|---|---|---|---|
+| `platform.api_tokens.view`/`.manage` | admin-web API Tokens tile + `GET/POST/PATCH/DELETE {gateway}/api-clients` | **Broken** — suite tested the deleted `lms.apiclients` key, self-aborted silently (see §4b harness-drift table) | **[HAVE]** — re-pointed in both `capability-toggle.mjs` and `apiclients-fresh-revoke.mjs` |
+| `hr.attendance.admin.geo_exceptions.view`/`.manage` | admin-web/hr-web Geo Exceptions tab, `GET/POST/PATCH .../geo-exceptions` | **[GAP]** (capability didn't exist before this pass) | UI/session case added to `capability-toggle.mjs` (`.view` only — `.manage`'s write-path denial is covered directly in `geo-exceptions.mjs` case 1) |
+| `lms.leads.assign.bulk` | LMS nav "Bulk Assign" + `POST /assignments/bulk` | **[GAP]** | UI/session case added; the API-side 403 is covered by `bulk-assign.mjs`, not the toggle suite (`probe()` is GET-only, see the case's comment) |
+| `hr.leave.admin` / `hr.attendance.admin` on **admin-web** specifically (vs. the pre-existing hr-web cases, same capability keys, different app) | admin-web Leave/Attendance Admin tiles | **[GAP]** — only the hr-web copy of these screens was ever toggle-tested | **[GAP]**, unchanged — the existing `hr.leave.admin.policies`/`hr.attendance.admin.shifts` cases still point at hr-web; add admin-web-pointed twins if the two consoles are expected to diverge in what they show |
+| `platform.write` (admin-web Team tile) | Team tile nav visibility only — the underlying user-mgmt endpoints gate on **rank alone**, not a capability (see the code comment in `admin-web/src/config/navigation.ts`) | **[GAP]** | **[GAP]** — arguably not worth a toggle case since revoking `platform.write` cannot be proven against an API 403 (there isn't one); a UI-only nav-visibility assertion would be the most this capability can prove |
+| Every other capability in `packages/rbac/src/capabilities.ts` not listed above (~most of the catalog — LMS/HR/Tasks page + operation nodes) | various | **[GAP]**, pre-existing | **[GAP]**, pre-existing — `capability-matrix-ui.mjs` proves the UI round-trip for one example (`admin.lookups.manage`); the resolver/session/UI/API 4-way check in `capability-toggle.mjs` only runs for the ~8 capabilities listed as `CASES` |
+
+**Bottom line:** capability matrix coverage is not, and was not before this
+pass, exhaustive over the capability catalog — it is a curated sample proving
+the 4-way-consistency *mechanism* works, plus whichever capabilities someone
+has explicitly added a case for. This pass (a) fixed the one case that had
+silently gone dead, and (b) added cases for the two brand-new capabilities.
+Capabilities belonging to screens this pass did not touch are exactly as
+covered (or not) as they were on 2026-07-29.
+
+---
+
 ## 5. Suggested run wiring
 
 Add the new suites to `run-all.mjs` in the write/matrix band, and to
@@ -246,3 +303,15 @@ Add the new suites to `run-all.mjs` in the write/matrix band, and to
 alongside the existing matrices; the extended tenant sweep in the tenant band; the
 two lifecycle suites in the HR band. The geofence-guard suite is cheap and
 high-value — it belongs in the smoke/decisive path.
+
+> **Done this pass:** the seven §4b suites (`geo-exceptions.mjs`,
+> `regularization-window.mjs`, `request-detail-approval-chain.mjs`,
+> `bulk-assign.mjs`, `public-report-api.mjs`, `public-read-api.mjs`) are wired
+> into both `run-all.mjs` (write/matrix band) and `run-decisive.mjs` (all
+> API-driven, no web app needed — same reasoning as the existing entries
+> there); `deep-crawl-admin.mjs` is wired into `run-all.mjs`'s breadth band
+> only (crawls need the web app up, like the other `deep-crawl-*`).
+> **Not yet run** — this was a code-only authoring pass (per request, "I will
+> be executing those in next session"). First run should go through
+> `preflight.mjs` first in case the new `admin-web` app isn't up on port 3004
+> in the target environment yet.

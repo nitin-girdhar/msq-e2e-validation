@@ -25,6 +25,35 @@ export const TOOLS = {
     writeTables: [],
   },
 
+  admin: {
+    label: 'Admin console (admin-web)',
+    app: 'admin-web',
+    // NEW in msq-core since the last e2e pass (85c92ff "Admin panel for
+    // HR/Tanent/Org Admin", eef7f50/940756d/1d44232/2891e7c "made admin ui"
+    // across hrms/lms/todo). A separate Next app (port 3004, was NOT in
+    // roles.json/tools.config until this update) that consolidates Team
+    // (user management), API Tokens, Leave Admin and Attendance Admin behind
+    // one console, gated in DashboardLayout at rank >= ANCHOR_RANK.ORG_ADMIN
+    // (980) — below that the layout renders an in-place "Access restricted"
+    // panel rather than redirecting, so the crawler must assert that panel's
+    // text, not just a redirect/404, for sub-980 roles. Every dashboard card
+    // is ALSO independently filtered by ADMIN_NAV capability (see
+    // app/dashboard/page.tsx DESCRIPTIONS comment: this replaced a bug where
+    // every tile incl. API Tokens showed regardless of capability and only
+    // 403'd on click) — worth a dedicated capability-vs-tile-visibility check
+    // alongside the existing X-04 tab-authz-consistency work.
+    home: '/dashboard',
+    expectAccessMinRank: 980,
+    routes: [
+      { id: 'dashboard', label: 'Dashboard', path: '/dashboard' },
+      { id: 'team', label: 'Team', path: '/dashboard/team' },
+      { id: 'api-tokens', label: 'API Tokens', path: '/dashboard/api-tokens' },
+      { id: 'leave-admin', label: 'Leave Admin', path: '/dashboard/leave/admin' },
+      { id: 'attendance-admin', label: 'Attendance Admin', path: '/dashboard/attendance/admin' },
+    ],
+    writeTables: ['iam.api_clients', 'hr.leave_policies', 'hr.attendance_rules', 'hr.attendance_geo_exceptions'],
+  },
+
   lookup: {
     label: 'Lookup Admin (lookup-admin)',
     app: 'lookup-admin',
@@ -69,15 +98,27 @@ export const TOOLS = {
       { id: 'analytics', label: 'Analytics', path: '/dashboard/analytics' },
       { id: 'team', label: 'Team', path: '/dashboard/team' },
       { id: 'users', label: 'Users', path: '/dashboard/users' },
-      { id: 'api-clients', label: 'API Tokens', path: '/dashboard/api-clients' },
+      // 'api-clients' page/nav entry was REMOVED in msq-lms@8fc420c ("api clients
+      // duplicate fix - moved to Admin panel") — the per-product LMS UI was a
+      // duplicate of the identity-service-backed console. Management now lives
+      // in msq-core admin-web at /dashboard/api-tokens (see core.routes below);
+      // the /api-clients gateway API itself is unchanged and still covered by
+      // suites/capability/apiclients-fresh-revoke.mjs. Do NOT re-add this route
+      // here — it 404s now — without first confirming it wasn't re-introduced.
+      { id: 'bulk-assign', label: 'Bulk Assign', path: '/dashboard/bulk-assign' },
     ],
     // Expected nav visibility per role tier — from src/config/navigation.ts.
     // Used for authz drift detection; unlisted roles inherit by rank.
+    // 'bulk-assign' is gated by CAPABILITY.LMS_LEADS_ASSIGN_BULK; the service
+    // (assignments.service.ts bulkAssignLeads) additionally hard-floors it at
+    // actorRank >= LMS_RANKS.SSE, so it is assumed granted to the same roles as
+    // 'assignments' below SSE-and-above — confirm the capability seed grants
+    // match before trusting this list for authz-drift grading.
     expectedNav: {
-      org_admin: ['leads', 'follow-ups', 'leads-history', 'assignments', 'analytics', 'users', 'api-clients'],
-      org_sr_manager: ['leads', 'follow-ups', 'leads-history', 'assignments', 'users'],
-      org_manager: ['leads', 'follow-ups', 'leads-history', 'assignments', 'users'],
-      senior_sales_executive: ['leads', 'follow-ups', 'leads-history', 'assignments', 'users'],
+      org_admin: ['leads', 'follow-ups', 'leads-history', 'assignments', 'bulk-assign', 'analytics', 'users'],
+      org_sr_manager: ['leads', 'follow-ups', 'leads-history', 'assignments', 'bulk-assign', 'users'],
+      org_manager: ['leads', 'follow-ups', 'leads-history', 'assignments', 'bulk-assign', 'users'],
+      senior_sales_executive: ['leads', 'follow-ups', 'leads-history', 'assignments', 'bulk-assign', 'users'],
       sales_representative: ['leads', 'follow-ups', 'leads-history'],
       read_only: ['leads'],
     },

@@ -72,10 +72,18 @@ const CASES = [
     ui: { type: 'nav', text: 'Analytics' },
     api: { url: () => `${APPS['lms-web']}/api/analytics/dashboard` },
   },
+  // Was 'lms.apiclients' pointed at lms-web's /dashboard/api-clients — BOTH
+  // deleted wholesale by msq-lms@8fc420c ("API clients moved to Admin panel").
+  // The feature now lives in admin-web, gated by platform.api_tokens.view, not
+  // a per-product capability. Re-pointed 2026-08-09; see the note in
+  // apiclients-fresh-revoke.mjs for how the stale key silently no-op'd this
+  // case for a while (baseline check saw `grantedBefore` falsy and skipped).
   {
-    cap: 'lms.apiclients', kind: 'page',
-    app: 'lms-web', path: '/dashboard/api-clients',
-    ui: { type: 'nav', text: 'API' },
+    // critical (not just high): this endpoint mints/rotates/deletes live
+    // integration credentials — see apiclients-fresh-revoke.mjs.
+    cap: 'platform.api_tokens.view', kind: 'page', critical: true,
+    app: 'admin-web', path: '/dashboard/api-tokens',
+    ui: { type: 'nav', text: 'API Tokens' },
     api: { url: (g) => `${g}/api-clients` },
   },
   {
@@ -89,6 +97,25 @@ const CASES = [
     app: 'hr-web', path: '/attendance/admin',
     ui: { type: 'tab', text: 'Shifts' },
     api: { url: () => `${APPS['hr-web']}/api/hr/shifts` },
+  },
+  // ── New since 2026-07-29 (this pass) — see E2E_TEST_PLAN.md §4b ─────────────
+  {
+    cap: 'hr.attendance.admin.geo_exceptions.view', kind: 'tab',
+    app: 'hr-web', path: '/attendance/admin',
+    ui: { type: 'tab', text: 'Geo Exceptions' },
+    api: { url: () => `${APPS['hr-web']}/api/hr/attendance/geo-exceptions` },
+  },
+  // No `api` probe: POST /assignments/bulk is the only route this capability
+  // guards, and this suite's probe() is GET-only — a GET against a POST-only
+  // route 404/405s regardless of capability state, which would silently never
+  // trip grading rule (b) (200-299 check) and look like coverage that isn't
+  // real. The actor-rank/capability-adjacent guards on the write path itself
+  // are covered directly in suites/lms/bulk-assign.mjs instead; this case is
+  // UI/session-only (nav hides, session list updates).
+  {
+    cap: 'lms.leads.assign.bulk', kind: 'page',
+    app: 'lms-web', path: '/dashboard/bulk-assign',
+    ui: { type: 'nav', text: 'Bulk Assign' },
   },
 ];
 
@@ -177,7 +204,7 @@ try {
     // (b) capability revoked but the API still serves it => not enforced.
     if (resolvedAfter === false && apiAfter && apiAfter >= 200 && apiAfter < 300) {
       record(TOOL, {
-        severity: c.cap === 'lms.apiclients' ? 'critical' : 'high',
+        severity: c.critical ? 'critical' : 'high',
         role: ROLE, tool: TOOL, page: `capability ${c.cap} — ${c.api.url(GATEWAY)}`,
         scenario: `Call the API guarded by '${c.cap}' after the capability is revoked`,
         expected: 'The endpoint rejects the call (403) once the capability is revoked',

@@ -34,6 +34,7 @@ const STAGES = [
   { tag: 'lms', script: 'suites/lms/deep-crawl-lms.mjs' },
   { tag: 'hr', script: 'suites/hr/deep-crawl-hr.mjs' },
   { tag: 'todo', script: 'suites/todo/deep-crawl-todo.mjs' },
+  { tag: 'admin', script: 'suites/admin/deep-crawl-admin.mjs' },
 
   // Depth — real writes, graded across the whole 19-role ladder.
   { tag: 'lms', script: 'suites/lms/lms-crud-matrix.mjs' },
@@ -43,11 +44,17 @@ const STAGES = [
   { tag: 'hr', script: 'suites/hr/attendance-split-shift.mjs' },
   { tag: 'hr', script: 'suites/hr/leave-lifecycle.mjs' },
   { tag: 'hr', script: 'suites/hr/regularization-lifecycle.mjs' },
+  { tag: 'hr', script: 'suites/hr/regularization-window.mjs' },
+  { tag: 'hr', script: 'suites/hr/geo-exceptions.mjs' },
+  { tag: 'hr', script: 'suites/hr/request-detail-approval-chain.mjs' },
   { tag: 'todo', script: 'suites/todo/task-visibility-matrix.mjs' },
   { tag: 'admin', script: 'suites/admin/lookup-crud.mjs' },
   { tag: 'admin', script: 'suites/admin/user-management.mjs' },
   { tag: 'admin', script: 'suites/admin/lookup-module-nav.mjs' },
   { tag: 'lms', script: 'suites/lms/lms-whatsapp-send.mjs' },
+  { tag: 'lms', script: 'suites/lms/bulk-assign.mjs' },
+  { tag: 'lms', script: 'suites/lms/public-report-api.mjs' },
+  { tag: 'lms', script: 'suites/lms/public-read-api.mjs' },
 
   // Cross-tenant isolation: log in as tenant B and try to see/touch tenant A.
   { tag: 'tenant', script: 'suites/tenant/cross-tenant-isolation.mjs' },
