@@ -103,7 +103,7 @@ const CASES = [
     cap: 'hr.attendance.admin.geo_exceptions.view', kind: 'tab',
     app: 'hr-web', path: '/attendance/admin',
     ui: { type: 'tab', text: 'Geo Exceptions' },
-    api: { url: () => `${APPS['hr-web']}/api/hr/attendance/geo-exceptions` },
+    api: { url: () => `${APPS['hr-web']}/api/hr/geo-exceptions` },
   },
   // No `api` probe: POST /assignments/bulk is the only route this capability
   // guards, and this suite's probe() is GET-only — a GET against a POST-only

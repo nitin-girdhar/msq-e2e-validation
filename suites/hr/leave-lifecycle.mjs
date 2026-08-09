@@ -15,7 +15,7 @@
 // row it created so the dev balance is left exactly as found.
 //
 //   node suites/hr/leave-lifecycle.mjs
-import { APPS, record } from '../../lib.mjs';
+import { APPS, record, roleMeta } from '../../lib.mjs';
 import { actor, apiPost } from '../../conc.mjs';
 import { dbReachable, scalar, q, lit } from '../../db.mjs';
 
@@ -25,8 +25,8 @@ if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit
 
 const stamp = Date.now();
 const LEAVE_TYPE = 'casual';
-const repId = scalar(`SELECT id FROM iam.users WHERE email='rep1@fitclass.ggn.in' LIMIT 1`);
-const orgId = scalar(`SELECT id FROM entity.organizations WHERE name='FitClass - Gurgaon' LIMIT 1`);
+const repId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative').email)} LIMIT 1`);
+const orgId = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(roleMeta('sales_representative').org)} LIMIT 1`);
 const tenantId = scalar(`SELECT tenant_id FROM entity.organizations WHERE id=${lit(orgId)}`);
 const typeId = scalar(`SELECT id FROM hr.leave_types WHERE name=${lit(LEAVE_TYPE)} AND tenant_id=${lit(tenantId)}::uuid LIMIT 1`);
 if (!repId || !orgId || !typeId) { console.log('Could not resolve rep1/org/leave_type — aborting'); process.exit(0); }
@@ -35,10 +35,14 @@ if (!repId || !orgId || !typeId) { console.log('Could not resolve rep1/org/leave
 const d = (offset) => { const x = new Date(); x.setDate(x.getDate() + offset); return x.toISOString().slice(0, 10); };
 const DAY1 = d(21), DAY2 = d(22), DAY3 = d(28);
 
-const statusOf = (id) => scalar(
-  `SELECT s.name FROM hr.leave_requests r JOIN hr.leave_request_statuses s ON s.id=r.status_id WHERE r.id=${lit(id)}`);
-const ledgerNet = (id) => Number(scalar(`SELECT COALESCE(SUM(amount),0) FROM hr.leave_ledger WHERE leave_request_id=${lit(id)}`) ?? 0);
-const ledgerRows = (id) => Number(scalar(`SELECT COUNT(*) FROM hr.leave_ledger WHERE leave_request_id=${lit(id)}`) ?? 0);
+// Diagnostic console.log calls in this suite call these unconditionally
+// (before any "did the request even get created" guard), so a failed apply
+// (id === null) must return a harmless placeholder instead of running a
+// WHERE id='null' query that psql rejects outright.
+const statusOf = (id) => id ? scalar(
+  `SELECT s.name FROM hr.leave_requests r JOIN hr.leave_request_statuses s ON s.id=r.status_id WHERE r.id=${lit(id)}`) : null;
+const ledgerNet = (id) => id ? Number(scalar(`SELECT COALESCE(SUM(amount),0) FROM hr.leave_ledger WHERE leave_request_id=${lit(id)}`) ?? 0) : 0;
+const ledgerRows = (id) => id ? Number(scalar(`SELECT COUNT(*) FROM hr.leave_ledger WHERE leave_request_id=${lit(id)}`) ?? 0) : 0;
 const created = [];
 
 function purge(id) {

@@ -24,7 +24,7 @@
 // in as "an approver who is not the owner" for the negative case.
 //
 //   node suites/hr/request-detail-approval-chain.mjs
-import { APPS, record } from '../../lib.mjs';
+import { APPS, record, roleMeta } from '../../lib.mjs';
 import { actor, apiGet, apiPost } from '../../conc.mjs';
 import { dbReachable, scalar, q, lit } from '../../db.mjs';
 
@@ -36,7 +36,7 @@ const APPROVER = 'org_admin';
 if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit(0); }
 
 const stamp = Date.now();
-const repId = scalar(`SELECT id FROM iam.users WHERE email='rep1@fitclass.ggn.in' LIMIT 1`);
+const repId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative').email)} LIMIT 1`);
 if (!repId) { console.log('Could not resolve rep1 — aborting'); process.exit(0); }
 
 const fail = (severity, scenario, expected, actual, evidence, fix) => record(TOOL, {

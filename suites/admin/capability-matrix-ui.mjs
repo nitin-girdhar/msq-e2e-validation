@@ -39,8 +39,13 @@ const ADMIN_ROLE = 'super_admin';
 // A low-rank global role, definitely NOT holding admin.lookups.manage by
 // default — makes the toggle observable and low-risk either way it goes.
 const TARGET_ROLE = 'sales_representative';
-const CAP_KEY = 'admin.lookups.manage';
-const CAP_LABEL_HINT = 'Manage'; // fragment of the capability's human label, for locating its row
+// `admin.*` capabilities are deliberately locked in the matrix UI (platform
+// administration — super_admin only, not assignable to a tenant role; see
+// CapabilityMatrixClient's isLocked/isPlatformAdminCapability), so their
+// checkboxes render disabled and a click always times out. Use the same
+// non-admin capability capability-toggle.mjs already exercises successfully.
+const CAP_KEY = 'lms.leads.assign.bulk';
+const CAP_LABEL_HINT = 'Bulk assign'; // fragment of the capability's human label, for locating its row
 
 if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit(0); }
 
@@ -78,13 +83,13 @@ try {
   await visit(page, `${APP}/dashboard/capabilities/matrix`);
 
   // Select the tenant, then the target role.
-  const tenantSelect = page.locator('#tenant-selector');
+  const tenantSelect = page.locator('#tenant-scope');
   const hasTenantSelect = await tenantSelect.count().catch(() => 0);
   if (!hasTenantSelect) {
     record(TOOL, {
       severity: 'high', role: ADMIN_ROLE, tool: TOOL, page: 'Lookup Admin / capabilities/matrix',
       scenario: 'Open the Capability Matrix screen',
-      expected: 'A tenant selector (#tenant-selector) renders',
+      expected: 'A tenant selector (#tenant-scope) renders',
       actual: 'No tenant selector found — the matrix page did not render as expected.',
       evidence: `${APP}/dashboard/capabilities/matrix heading; badRequests=${JSON.stringify(log.badRequests.slice(-4))}`,
       proposedSolution: 'Check app/dashboard/capabilities/matrix/page.tsx and CapabilityMatrixClient render without throwing.',

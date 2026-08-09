@@ -40,7 +40,7 @@ if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit
 
 const orgName = roleMeta(EMPLOYEE_ROLE)?.org;
 const orgId = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(orgName)} LIMIT 1`);
-const userId = scalar(`SELECT id FROM iam.users WHERE email='rep1@fitclass.ggn.in' LIMIT 1`);
+const userId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative').email)} LIMIT 1`);
 if (!orgId || !userId) { console.log(`Could not resolve org (${orgName}) / rep1 user — aborting`); process.exit(0); }
 
 const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
@@ -121,7 +121,7 @@ try {
     q(`INSERT INTO hr.attendance_events
          (user_id, org_id, event_type, occurred_at, source, is_within_geofence, is_wfh, is_off_segment)
        VALUES (${lit(userId)}, ${lit(orgId)}, ${lit(eventType)}, ${lit(iso(time))}::timestamptz,
-               'e2e-seed', TRUE, FALSE, ${offSegment ? 'TRUE' : 'NULL'})`);
+               'api', TRUE, FALSE, ${offSegment ? 'TRUE' : 'NULL'})`);
   }
   console.log(`  seeded ${punches.length} events for ${today}`);
 

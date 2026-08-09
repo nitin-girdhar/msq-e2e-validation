@@ -8,13 +8,13 @@
 // both editors read the task first and send the version they opened.
 //
 //   node suites/concurrency/todo-task-double-edit.mjs
-import { APPS, record } from '../../lib.mjs';
+import { APPS, record, roleMeta } from '../../lib.mjs';
 import { actor, apiGet, apiPost, apiPatch, simultaneously } from '../../conc.mjs';
 import { dbReachable, one, scalar, lit } from '../../db.mjs';
 
 const TOOL = 'concurrency';
 const TODO = APPS['todo-web'];
-const EDITORS = ['org_admin', 'org_sr_manager']; // e1 edits as admin, e2 edits as assignee
+const EDITORS = ['org_admin', 'org_manager']; // e1 edits as admin, e2 edits as assignee
 
 if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit(0); }
 
@@ -23,7 +23,7 @@ const [e1, e2] = await Promise.all(EDITORS.map((r) => actor(r)));
 // Assign the task to the second editor so BOTH have edit access (admin can edit
 // any task in-org; the assignee can edit their own) — otherwise the second
 // editor gets a 404/403 and there is no real concurrent-write to observe.
-const assigneeId = scalar(`SELECT id FROM iam.users WHERE email='srmanager@fitclass.ggn.in' LIMIT 1`);
+const assigneeId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('org_manager').email)} LIMIT 1`);
 
 // 1. Create a throwaway task as the first editor, assigned to the second.
 const stamp = Date.now();

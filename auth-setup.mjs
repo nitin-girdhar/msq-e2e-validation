@@ -53,8 +53,25 @@ async function login({ stateKey, email }) {
 
     if (/select-branch/.test(page.url())) {
       branchPicker = true;
-      const option = page.locator('button, [role="option"], li').filter({ hasText: /fitclass|msquare|itc/i }).first();
+      // Any branch is a valid login for test purposes — the old regex
+      // (/fitclass|msquare|itc/i) matched only the fictional seed's org
+      // names; against real branch names (e.g. "Gurugram - Sector 69") it
+      // matched nothing, the click silently no-op'd, and the user was left
+      // stranded on /select-branch with an incomplete session (breaks every
+      // subsequent API call with 401 "Invalid token").
+      const option = page.locator('button, [role="option"], li').first();
       await option.click({ timeout: 10000 }).catch(() => {});
+      // networkidle alone is flaky under load (many browsers/dev-servers
+      // contending for CPU): the org-switch fetch + client-side navigation
+      // can start after the idle check already passed, leaving the click
+      // apparently "successful" but the page still on /select-branch. Wait
+      // for the URL to actually change first (retrying the click once if it
+      // doesn't), then settle on networkidle.
+      const left = await page.waitForURL((u) => !/select-branch/.test(u.pathname), { timeout: 12000 }).then(() => true).catch(() => false);
+      if (!left) {
+        await option.click({ timeout: 10000 }).catch(() => {});
+        await page.waitForURL((u) => !/select-branch/.test(u.pathname), { timeout: 15000 }).catch(() => {});
+      }
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
     }
 

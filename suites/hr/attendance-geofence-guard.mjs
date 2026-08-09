@@ -51,7 +51,7 @@ if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit
 
 const orgName = roleMeta(ROLE)?.org;
 const orgId = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(orgName)} LIMIT 1`);
-const userId = scalar(`SELECT id FROM iam.users WHERE email='rep1@fitclass.ggn.in' LIMIT 1`);
+const userId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative').email)} LIMIT 1`);
 if (!orgId || !userId) { console.log(`Could not resolve org (${orgName}) / rep1 user — aborting`); process.exit(0); }
 
 // Today's work date in the org timezone (matches the service's localDateOf).

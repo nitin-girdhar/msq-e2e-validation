@@ -33,7 +33,7 @@ if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit
 
 const orgName = roleMeta(ACTOR_ROLE)?.org ?? 'FitClass - Gurgaon';
 const orgId = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(orgName)} LIMIT 1`);
-const repId = scalar(`SELECT id FROM iam.users WHERE email='rep1@fitclass.ggn.in' LIMIT 1`);
+const repId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative').email)} LIMIT 1`);
 if (!orgId || !repId) { console.log('Could not resolve org/rep1 — aborting'); process.exit(0); }
 
 // Two leads in-org, currently NOT assigned to rep1 (so a real reassignment happens).
@@ -74,7 +74,7 @@ try {
   }
 
   // ── 2. Target-rank cap — bulk-assigning TO org_manager (rank 60 > SSE 40) ────
-  const mgrId = scalar(`SELECT id FROM iam.users WHERE email='manager@fitclass.ggn.in' LIMIT 1`)
+  const mgrId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('org_manager').email)} LIMIT 1`)
     ?? scalar(`SELECT u.id FROM iam.users u JOIN iam.user_org_mapping uom ON uom.user_id=u.id
                  JOIN iam.user_roles ur ON ur.id=uom.role_id WHERE uom.org_id=${lit(orgId)} AND ur.name='org_manager' LIMIT 1`);
   if (mgrId) {

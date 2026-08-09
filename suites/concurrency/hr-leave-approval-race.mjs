@@ -9,14 +9,14 @@
 // prove what happens when two of them act simultaneously.
 //
 //   node suites/concurrency/hr-leave-approval-race.mjs
-import { APPS, record, cfg } from '../../lib.mjs';
+import { APPS, record, cfg, roleMeta } from '../../lib.mjs';
 import { actor, apiPost, apiGet, simultaneously } from '../../conc.mjs';
 import { dbReachable, one, scalar, lit } from '../../db.mjs';
 
 const TOOL = 'concurrency';
 const HR = APPS['hr-web'];
-const REQUESTER = 'sales_representative'; // rep1@fitclass.ggn.in
-const APPROVERS = ['org_sr_manager', 'org_admin'];
+const REQUESTER = 'sales_representative';
+const APPROVERS = ['org_manager', 'org_admin'];
 
 if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit(0); }
 
@@ -29,7 +29,7 @@ function futureDate(days) {
 let reqId = scalar(`SELECT lr.id FROM hr.leave_requests lr
   JOIN hr.leave_request_statuses s ON s.id=lr.status_id
   JOIN iam.users u ON u.id=lr.user_id
-  WHERE s.name='pending' AND u.email='rep1@fitclass.ggn.in' AND NOT lr.is_deleted
+  WHERE s.name='pending' AND u.email=${lit(roleMeta('sales_representative').email)} AND NOT lr.is_deleted
   ORDER BY lr.created_at DESC LIMIT 1`);
 
 const rep = await actor(REQUESTER);
@@ -49,7 +49,7 @@ if (!reqId) {
     // balance. The seed ships neither for this org, so bootstrap via the
     // product APIs as org_admin (idempotent enough — policy may 409 if it
     // already exists, which is fine).
-    const orgId = scalar(`SELECT id FROM entity.organizations WHERE name='FitClass - Gurgaon' LIMIT 1`);
+    const orgId = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(roleMeta('sales_representative').org)} LIMIT 1`);
     const admin = await actor('org_admin');
     const pol = await apiPost(admin, `${HR}/api/hr/leave/policies`, {
       leave_type_name: 'casual', org_id: orgId, accrual_frequency: 'yearly', accrual_amount: 12,
@@ -57,7 +57,7 @@ if (!reqId) {
     });
     console.log(`Bootstrap casual policy (org_admin) -> ${pol.status}`);
     // The rep starts with 0 accrued balance; credit some so apply can succeed.
-    const repUserId = scalar(`SELECT id FROM iam.users WHERE email='rep1@fitclass.ggn.in' LIMIT 1`);
+    const repUserId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative').email)} LIMIT 1`);
     const adj = await apiPost(admin, `${HR}/api/hr/leave/adjustments`, {
       user_id: repUserId, leave_type_name: 'casual', amount: 5, note: 'E2E concurrency bootstrap',
     });
@@ -81,7 +81,7 @@ if (!reqId) {
   }
   await new Promise((r) => setTimeout(r, 400));
   reqId = scalar(`SELECT lr.id FROM hr.leave_requests lr JOIN iam.users u ON u.id=lr.user_id
-    WHERE u.email='rep1@fitclass.ggn.in' AND lr.reason='E2E concurrency probe'
+    WHERE u.email=${lit(roleMeta('sales_representative').email)} AND lr.reason='E2E concurrency probe'
     ORDER BY lr.created_at DESC LIMIT 1`);
 }
 if (!reqId) { console.log('No pending request id — aborting'); await rep.close(); process.exit(0); }

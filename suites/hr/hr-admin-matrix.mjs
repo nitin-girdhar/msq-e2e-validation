@@ -10,7 +10,7 @@
 // 75 succeeding on these is a privilege escalation.
 //
 //   node suites/hr/hr-admin-matrix.mjs
-import { APPS, roleMeta } from '../../lib.mjs';
+import { APPS, roleMeta, SECONDARY } from '../../lib.mjs';
 import { apiPost, apiGet, apiPut } from '../../conc.mjs';
 import { runRoleMatrix } from '../../matrix.mjs';
 import { dbReachable, scalar, q, lit } from '../../db.mjs';
@@ -77,7 +77,7 @@ await runRoleMatrix({
 // ── 5. BALANCE ADJUSTMENT (HR_LEAVE_ADMIN_ADJUSTMENT_CREATE) ───────────────
 // Crediting leave balance is financially meaningful — escalation is high.
 console.log('\n— adjust another user\'s leave balance (HR admin only) —');
-const targetUser = scalar(`SELECT id FROM iam.users WHERE email='rep3@fitclass.ggn.in' LIMIT 1`);
+const targetUser = scalar(`SELECT id FROM iam.users WHERE email=${lit(SECONDARY.find((a) => a.actor === 'rep3').email)} LIMIT 1`);
 if (targetUser) {
   await runRoleMatrix({
     tool: TOOL, action: "credit another employee's leave balance",

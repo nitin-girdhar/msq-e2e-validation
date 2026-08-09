@@ -37,12 +37,13 @@ const JPEG =
 
 if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit(0); }
 
-const userId = scalar(`SELECT id FROM iam.users WHERE email='rep1@fitclass.ggn.in' LIMIT 1`);
+const userId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative').email)} LIMIT 1`);
+if (!userId) { console.log('Could not resolve rep1 — aborting'); process.exit(0); }
 const orgId = scalar(`SELECT org_id FROM iam.users WHERE id=${lit(userId)}`);
+if (!orgId) { console.log('Could not resolve rep1 org — aborting'); process.exit(0); }
 const otherId = scalar(
   `SELECT id FROM iam.users WHERE org_id=${lit(orgId)} AND id<>${lit(userId)} AND NOT is_deleted LIMIT 1`,
 );
-if (!userId || !orgId) { console.log('Could not resolve rep1 / org — aborting'); process.exit(0); }
 
 // ── Snapshot state we mutate, so we can restore it afterward ──────────────────
 const priorPhoto = q(`SELECT photo_key, photo_content_type FROM iam.users WHERE id=${lit(userId)}`)[0] ?? ['', ''];
@@ -154,7 +155,7 @@ try {
   {
     q(`INSERT INTO hr.attendance_rules (org_id, photo_change_cooldown_days, require_face_match)
          VALUES (${lit(orgId)}, 30, TRUE)
-       ON CONFLICT (org_id) WHERE NOT is_deleted
+       ON CONFLICT (tenant_id, COALESCE(org_id, '00000000-0000-0000-0000-000000000000'::uuid)) WHERE NOT is_deleted
        DO UPDATE SET photo_change_cooldown_days=30, require_face_match=TRUE, updated_at=CLOCK_TIMESTAMP()`);
     q(`UPDATE hr.employee_profiles SET face_enrolled_at=CLOCK_TIMESTAMP() WHERE user_id=${lit(userId)}`);
     const { status, body } = await apiPost(a, ENROLL, { user_id: userId, consent: true });

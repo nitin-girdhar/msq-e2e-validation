@@ -17,7 +17,16 @@
 //   rep3            +919811003009
 //   viewer          +919811003007
 import { chromium } from '@playwright/test';
-import { cfg, record } from '../../lib.mjs';
+import { cfg, record, roleMeta } from '../../lib.mjs';
+import { scalar } from '../../db.mjs';
+
+// This suite originally hardcoded the fictional seed's mobiles (org_seq=3).
+// Rewritten to look up the real mobile on file for the sales_representative
+// test user in the restored production data (see roles.json's 2026-08-09
+// note) — the only representative-role user with a populated `mobile` column.
+const repMobile = scalar(
+  `SELECT mobile FROM iam.users WHERE email='${roleMeta('sales_representative').email}' LIMIT 1`,
+);
 
 async function waitForHydration(page) {
   await page.waitForFunction(() => {
@@ -49,24 +58,29 @@ async function tryLogin(identifier, password, label) {
   return { label, identifier, url, alert, badRequests: log.badRequests };
 }
 
-// 1) Valid phone login (org_admin's seeded mobile).
-const validPhone = await tryLogin('+919811003001', cfg.password, 'valid-phone-with-plus');
+// 1) Valid phone login (sales_representative's real mobile on file).
+if (!repMobile) {
+  console.log('No real mobile on file for the sales_representative test user — skipping phone-login suite.');
+  process.exit(0);
+}
+const validPhone = await tryLogin(repMobile, cfg.password, 'valid-phone-with-plus');
 if (!/\/dashboard/.test(validPhone.url) && !/localhost:300[123]/.test(validPhone.url)) {
   record('core', {
     severity: 'high',
-    role: 'org_admin',
+    role: 'sales_representative',
     page: '/login',
-    scenario: 'Valid seeded mobile number (+919811003001, E.164) fails to log in via the Email field',
+    scenario: `Valid mobile number (${repMobile}, E.164) fails to log in via the Email field`,
     expected: 'Login succeeds and lands on the product dashboard (identifier auto-detected as mobile per resolveLoginUser)',
     actual: `Landed on ${validPhone.url}, alert="${validPhone.alert}"`,
-    evidence: 'Direct attempt through the real login form; identifier is the seeded org_admin mobile for fitclass.ggn.in (org_seq=3).',
+    evidence: `Direct attempt through the real login form; identifier is the real sales_representative mobile on file (${repMobile}).`,
   });
 } else {
   console.log('OK: E.164 mobile login succeeded.');
 }
 
 // 2) Valid phone, bare 10-digit form (no +91, no leading 0) — normalizeMobile should default to +91.
-const validBare = await tryLogin('9811003002', cfg.password, 'valid-phone-bare-10digit-rep1');
+const bareDigits = repMobile.replace(/^\+91/, '');
+const validBare = await tryLogin(bareDigits, cfg.password, 'valid-phone-bare-10digit-rep1');
 console.log('bare-digit result url:', validBare.url, 'alert:', validBare.alert);
 if (!/\/dashboard/.test(validBare.url) && !/localhost:300[123]/.test(validBare.url)) {
   record('core', {

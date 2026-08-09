@@ -109,7 +109,7 @@ for (const href of uniqueLinks) {
 // ── 2. Edit-and-save verification on a real, safe lookup row ───────────────
 // lead_sources is a plain name/label catalog — safe to rename and restore.
 const target = dbRows(
-  `SELECT id, name FROM lms.lead_sources WHERE is_active ORDER BY created_at LIMIT 1`,
+  `SELECT id, name FROM lms.lead_sources WHERE is_active ORDER BY id LIMIT 1`,
   ['id', 'name']
 )[0];
 

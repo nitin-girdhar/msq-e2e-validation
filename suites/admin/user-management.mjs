@@ -62,7 +62,7 @@ const ADMIN = 'org_admin';
 const adminOrg = roleMeta(ADMIN).org;
 const adminOrgId = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(adminOrg)} LIMIT 1`);
 // A manager candidate in the same org (rep2 lives in FitClass - Gurgaon with org_admin).
-const managerId = scalar(`SELECT id FROM iam.users WHERE email='rep2@fitclass.ggn.in' LIMIT 1`);
+const managerId = scalar(`SELECT id FROM iam.users WHERE email=${lit(cfg.secondaryActors.find((a) => a.actor === 'rep2').email)} LIMIT 1`);
 // A second org in the SAME tenant to test the move (any org that isn't the admin's).
 const otherOrgId = scalar(
   `SELECT o.id FROM entity.organizations o

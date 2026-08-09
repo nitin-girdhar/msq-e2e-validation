@@ -29,7 +29,11 @@ import { dbReachable, scalar, q, lit } from '../../db.mjs';
 
 const TOOL = 'hr';
 const HR = APPS['hr-web'];
-const GEO_URL = `${HR}/api/hr/attendance/geo-exceptions`;
+// api-gateway registers this at /hr/geo-exceptions (server.ts), not
+// /hr/attendance/geo-exceptions despite attendance.router.ts's filename —
+// the extra "attendance/" segment 404s at the gateway before ever reaching
+// hr-service's capability gate.
+const GEO_URL = `${HR}/api/hr/geo-exceptions`;
 const CHECK_IN = `${HR}/api/hr/attendance/check-in`;
 const REQUESTER = 'sales_representative';
 const ADMIN = 'org_admin';
@@ -44,7 +48,7 @@ if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit
 const stamp = Date.now();
 const orgName = roleMeta(REQUESTER)?.org;
 const orgId = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(orgName)} LIMIT 1`);
-const userId = scalar(`SELECT id FROM iam.users WHERE email='rep1@fitclass.ggn.in' LIMIT 1`);
+const userId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative').email)} LIMIT 1`);
 if (!orgId || !userId) { console.log(`Could not resolve org (${orgName}) / rep1 — aborting`); process.exit(0); }
 
 const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());

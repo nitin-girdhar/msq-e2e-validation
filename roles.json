@@ -9,45 +9,35 @@
     "admin-web": "http://localhost:3004",
     "lookup-admin": "http://localhost:3005"
   },
-  "_note": "One representative login per distinct role name (dev password Admin@12345). Global-ladder roles use the FitClass Gurgaon org (fitclass.ggn.in) so they share an org with the rep1/rep2/rep3 concurrency actors; department-ladder roles only exist in FitClass Connaught Place (fitclass.cp.in) and MSquare Gurgaon HQ, so they use fitclass.cp.in. There is no global hr_admin user in the seed — HR-admin authority is carried by hr_head (rank 75).",
+  "_note": "REWRITTEN 2026-08-09 to point at the real production-refresh data restored into the local `platforms` DB (docker container msq-db-server), per explicit instruction to validate against that data as-is rather than re-seed dummy fixtures. The product's real role taxonomy differs from the harness's original fictional one: no operations/admin department ladder, and department roles are fitness_manager/assistant_fitness_manager/fitness_trainer/pre_sales_captain instead of ops_head/admin_manager/etc. Passwords for the 16 users below were reset to the dev password directly in the local DB (bcrypt, 12 rounds) — this is a local Docker copy only, no production system was touched. There is no active read_only-role user anywhere in the data, so that role has zero real-user coverage this run (see openissues.md).",
   "roles": [
-    { "role": "super_admin",            "email": "super.admin@msquare.io",              "rank": 1000, "scope": "platform", "dept": null,         "org": "FitClass - Connaught Place" },
-    { "role": "tenant_admin",           "email": "tenant.admin@fitclass.cp.in",         "rank": 990,  "scope": "tenant",   "dept": null,         "org": "FitClass - Connaught Place" },
-    { "role": "org_admin",              "email": "admin@fitclass.ggn.in",               "rank": 980,  "scope": "org",      "dept": null,         "org": "FitClass - Gurgaon" },
-    { "role": "hr_head",                "email": "hr_head@fitclass.cp.in",              "rank": 75,   "scope": "dept",     "dept": "hr",         "org": "FitClass - Connaught Place", "actsAs": "hr_admin" },
-    { "role": "sales_head",             "email": "sales_head@fitclass.cp.in",           "rank": 70,   "scope": "dept",     "dept": "sales",      "org": "FitClass - Connaught Place" },
-    { "role": "ops_head",               "email": "ops_head@fitclass.cp.in",             "rank": 70,   "scope": "dept",     "dept": "operations", "org": "FitClass - Connaught Place" },
-    { "role": "org_sr_manager",         "email": "srmanager@fitclass.ggn.in",           "rank": 70,   "scope": "org",      "dept": null,         "org": "FitClass - Gurgaon" },
-    { "role": "sales_manager",          "email": "sales_manager@fitclass.cp.in",        "rank": 60,   "scope": "dept",     "dept": "sales",      "org": "FitClass - Connaught Place" },
-    { "role": "hr_manager",             "email": "hr_manager@fitclass.cp.in",           "rank": 60,   "scope": "dept",     "dept": "hr",         "org": "FitClass - Connaught Place" },
-    { "role": "ops_manager",            "email": "ops_manager@fitclass.cp.in",          "rank": 60,   "scope": "dept",     "dept": "operations", "org": "FitClass - Connaught Place" },
-    { "role": "admin_manager",          "email": "admin_manager@fitclass.cp.in",        "rank": 60,   "scope": "dept",     "dept": "admin",      "org": "FitClass - Connaught Place" },
-    { "role": "org_manager",            "email": "manager@fitclass.ggn.in",             "rank": 60,   "scope": "org",      "dept": null,         "org": "FitClass - Gurgaon" },
-    { "role": "senior_sales_executive", "email": "senior.exec@fitclass.ggn.in",         "rank": 40,   "scope": "org",      "dept": null,         "org": "FitClass - Gurgaon" },
-    { "role": "sales_senior_executive", "email": "sales_senior_executive@fitclass.cp.in","rank": 40,  "scope": "dept",     "dept": "sales",      "org": "FitClass - Connaught Place" },
-    { "role": "hr_executive",           "email": "hr_executive@fitclass.cp.in",         "rank": 25,   "scope": "dept",     "dept": "hr",         "org": "FitClass - Connaught Place" },
-    { "role": "ops_executive",          "email": "ops_executive@fitclass.cp.in",        "rank": 25,   "scope": "dept",     "dept": "operations", "org": "FitClass - Connaught Place" },
-    { "role": "admin_executive",        "email": "admin_executive@fitclass.cp.in",      "rank": 25,   "scope": "dept",     "dept": "admin",      "org": "FitClass - Connaught Place" },
-    { "role": "sales_representative",   "email": "rep1@fitclass.ggn.in",                "rank": 20,   "scope": "org",      "dept": null,         "org": "FitClass - Gurgaon" },
-    { "role": "read_only",              "email": "viewer@fitclass.ggn.in",              "rank": 0,    "scope": "org",      "dept": null,         "org": "FitClass - Gurgaon" }
+    { "role": "super_admin",              "email": "root@root.com",                     "rank": 1000, "scope": "platform", "dept": null,       "org": "Gurugram - Sector 69" },
+    { "role": "tenant_admin",             "email": "admin@fitclass.in",                 "rank": 990,  "scope": "tenant",   "dept": null,       "org": "Gurugram - Sector 69" },
+    { "role": "org_admin",                "email": "admin-ggn-sec69@fitclass.in",       "rank": 980,  "scope": "org",      "dept": null,       "org": "Gurugram - Sector 69" },
+    { "role": "hr_admin",                 "email": "hr-head@fitclass.in",               "rank": 75,   "scope": "dept",     "dept": "hr",       "org": "Gurugram - Sector 69", "actsAs": "hr_admin" },
+    { "role": "fitness_manager",          "email": "vishalsharma100101@gmail.com",      "rank": 60,   "scope": "dept",     "dept": "training", "org": "Gurugram - Sector 69" },
+    { "role": "org_manager",              "email": "anuppundir0011@gmail.com",          "rank": 60,   "scope": "dept",     "dept": "sales",    "org": "Gurugram - Sector 69" },
+    { "role": "pre_sales_captain",        "email": "aniketsingh959904@gmail.com",       "rank": 45,   "scope": "dept",     "dept": "sales",    "org": "Noida - Knowledge Park 2" },
+    { "role": "assistant_fitness_manager","email": "lovishwahi07@gmail.com",            "rank": 40,   "scope": "dept",     "dept": "training", "org": "Noida - Knowledge Park 2" },
+    { "role": "senior_sales_executive",   "email": "chiragbhardwaj463@gmail.com",       "rank": 40,   "scope": "dept",     "dept": "sales",    "org": "Gurugram - Sector 69" },
+    { "role": "fitness_trainer",          "email": "shahkishan2002@gmail.com",          "rank": 20,   "scope": "dept",     "dept": "training", "org": "Gurugram - Sector 69" },
+    { "role": "sales_representative",     "email": "singhneha6020@gmail.com",           "rank": 20,   "scope": "dept",     "dept": "sales",    "org": "Gurugram - Sector 69" }
   ],
+  "_readOnlyGap": "No active read_only-role user exists in the restored data. read_only is excluded from this run's role list rather than fabricated; see openissues.md for the coverage gap.",
   "secondaryActors": [
-    { "role": "sales_representative", "actor": "rep2", "email": "rep2@fitclass.ggn.in", "org": "FitClass - Gurgaon" },
-    { "role": "sales_representative", "actor": "rep3", "email": "rep3@fitclass.ggn.in", "org": "FitClass - Gurgaon" }
+    { "role": "sales_representative", "actor": "rep2", "email": "rawatsachin6300@gmail.com", "org": "Gurugram - Sector 69" },
+    { "role": "sales_representative", "actor": "rep3", "email": "belwalrohit93@gmail.com",   "org": "Gurugram - Sector 69" }
   ],
 
-  "_tenants": "Two seeded tenants. Everything above lives in FitClass (tenant A). The crossTenant block below is tenant B, used to prove one tenant cannot see or touch the other's data. MSquare Gurgaon HQ mirrors FitClass Connaught Place: it carries the same department ladder.",
+  "_tenants": "Two real tenants in the restored data. Everything above lives in Fitclass (tenant A, id 0b39b589-ea7d-446a-b660-350e1d84ebd9). crossTenantActors below is tenant B, MSquare Professionals (id b08a67c9-f6a9-44a5-81f8-3a92251151f9) — only 3 active users exist there in total.",
   "tenants": [
-    { "key": "fitclass", "name": "FitClass", "primary": true, "org": "FitClass - Gurgaon", "deptOrg": "FitClass - Connaught Place" },
-    { "key": "msquare", "name": "MSquare Professionals", "primary": false, "org": "MSquare Professionals - Gurgaon HQ", "deptOrg": "MSquare Professionals - Gurgaon HQ" }
+    { "key": "fitclass", "name": "Fitclass", "primary": true, "org": "Gurugram - Sector 69", "deptOrg": "Gurugram - Sector 69" },
+    { "key": "msquare", "name": "MSquare Professionals", "primary": false, "org": "Gurugram - Civil Lines", "deptOrg": "Gurugram - Civil Lines" }
   ],
 
   "crossTenantActors": [
-    { "stateKey": "msq_tenant_admin", "role": "tenant_admin",         "email": "tenant.admin@msq.ggn.in", "rank": 990, "tenant": "MSquare Professionals", "org": "MSquare Professionals - Gurgaon HQ" },
-    { "stateKey": "msq_org_admin",    "role": "org_admin",            "email": "admin@msq.ggn.in",        "rank": 980, "tenant": "MSquare Professionals", "org": "MSquare Professionals - Gurgaon HQ" },
-    { "stateKey": "msq_hr_head",      "role": "hr_head",              "email": "hr_head@msq.ggn.in",      "rank": 75,  "tenant": "MSquare Professionals", "org": "MSquare Professionals - Gurgaon HQ" },
-    { "stateKey": "msq_org_manager",  "role": "org_manager",          "email": "manager@msq.ggn.in",      "rank": 60,  "tenant": "MSquare Professionals", "org": "MSquare Professionals - Gurgaon HQ" },
-    { "stateKey": "msq_rep1",         "role": "sales_representative", "email": "rep1@msq.ggn.in",         "rank": 20,  "tenant": "MSquare Professionals", "org": "MSquare Professionals - Gurgaon HQ" },
-    { "stateKey": "msq_read_only",    "role": "read_only",            "email": "viewer@msq.ggn.in",       "rank": 0,   "tenant": "MSquare Professionals", "org": "MSquare Professionals - Gurgaon HQ" }
+    { "stateKey": "msq_tenant_admin", "role": "tenant_admin",         "email": "admin@msquareprofessionals.in",     "rank": 990, "tenant": "MSquare Professionals", "org": "Gurugram - Civil Lines" },
+    { "stateKey": "msq_org_admin",    "role": "org_admin",            "email": "org-admin@msquareprofessionals.in", "rank": 980, "tenant": "MSquare Professionals", "org": "Gurugram - Civil Lines" },
+    { "stateKey": "msq_rep1",         "role": "sales_representative", "email": "hr@msquareprofessionals.in",        "rank": 20,  "tenant": "MSquare Professionals", "org": "Gurugram - Civil Lines" }
   ]
 }
