@@ -19,6 +19,7 @@
 import { cfg, record, roleMeta, authFile } from '../../lib.mjs';
 import { actor, apiPost } from '../../conc.mjs';
 import { dbReachable, one, q, lit } from '../../db.mjs';
+import { purgeE2eUsers } from '../../fixtures.mjs';
 import fs from 'node:fs';
 
 const TOOL = 'admin';
@@ -75,5 +76,5 @@ for (const role of ROLES) {
   }
 }
 
-q(`DELETE FROM iam.users WHERE email LIKE ${lit(`${MARKER}-%@e2e.local`)}`);
+purgeE2eUsers(`${MARKER}-%@e2e.local`);
 console.log(`\n${failures === 0 ? 'PASS' : `FAIL (${failures})`} — cleaned up throwaway users for ${MARKER}.`);

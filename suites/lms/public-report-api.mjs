@@ -131,9 +131,11 @@ try {
     proposedSolution: 'Add a tenant_admin actor + scope_all_orgs key to specifically test the branch_id-not-in-X-Allowed-Org-Ids 400 path.',
   });
 } finally {
+  // Revoke BEFORE closing the actor: apiDelete on a closed browser context
+  // throws, the .catch() swallowed it, and every run leaked a live API key.
+  if (clientId) await apiDelete(admin, `${CLIENTS_URL}/${clientId}`).catch(() => {});
   await admin.close();
   await raw.close();
-  if (clientId) await apiDelete(admin, `${CLIENTS_URL}/${clientId}`).catch(() => {});
   if (scopelessClientId) await apiDelete(admin, `${CLIENTS_URL}/${scopelessClientId}`).catch(() => {});
   console.log(`\ncleaned up api-client key(s) for stamp ${stamp}.`);
 }

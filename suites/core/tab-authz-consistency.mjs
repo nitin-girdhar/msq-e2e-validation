@@ -16,7 +16,7 @@
 //   node suites/core/tab-authz-consistency.mjs
 import fs from 'node:fs';
 import path from 'node:path';
-import { record, resultsDir } from '../../lib.mjs';
+import { record, resultsDir, appPath } from '../../lib.mjs';
 
 const file = path.join(resultsDir, 'coverage-all.json');
 if (!fs.existsSync(file)) {
@@ -25,8 +25,13 @@ if (!fs.existsSync(file)) {
 }
 const rows = JSON.parse(fs.readFileSync(file, 'utf8'));
 
-const pathOf = (u) => { try { return new URL(u).pathname.replace(/\/$/, ''); } catch { return ''; } };
-const norm = (p) => String(p || '').replace(/\/$/, '');
+// Landed URLs and tab hrefs carry the app's basePath (/lms/dashboard/leads);
+// tools.config route paths do not (/dashboard/leads). Compare app-relative.
+const pathOf = (u) => appPath(u).replace(/\/$/, '');
+const norm = (p) => {
+  const s = String(p || '');
+  return (s.startsWith('/') ? appPath(`http://x${s}`) : s).replace(/\/$/, '');
+};
 
 // Did this role actually land on the route it asked for?
 const reachedIndex = new Map(); // `${role}|${path}` -> boolean

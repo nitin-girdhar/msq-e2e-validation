@@ -80,24 +80,25 @@ const { browser, page, log } = await openState(ADMIN_ROLE);
 const repActor = await actor(TARGET_ROLE);
 
 try {
+  // Tenant scope moved from an on-page #tenant-scope <select> to the app-wide
+  // navbar TenantScopeSwitcher, which only writes this cookie and refreshes
+  // the server components — so set the cookie the same way, then load.
+  await page.context().addCookies([{ name: 'msq_admin_tenant_id', value: tenantId, url: new URL(APP).origin, sameSite: 'Lax' }]);
   await visit(page, `${APP}/dashboard/capabilities/matrix`);
 
-  // Select the tenant, then the target role.
-  const tenantSelect = page.locator('#tenant-scope');
-  const hasTenantSelect = await tenantSelect.count().catch(() => 0);
+  // Then the target role.
+  const hasTenantSelect = await page.locator('#matrix-role').count().catch(() => 0);
   if (!hasTenantSelect) {
     record(TOOL, {
       severity: 'high', role: ADMIN_ROLE, tool: TOOL, page: 'Lookup Admin / capabilities/matrix',
       scenario: 'Open the Capability Matrix screen',
-      expected: 'A tenant selector (#tenant-scope) renders',
-      actual: 'No tenant selector found — the matrix page did not render as expected.',
+      expected: 'With the navbar tenant scope set, the role selector (#matrix-role) renders',
+      actual: 'No #matrix-role — the matrix page did not render as expected.',
       evidence: `${APP}/dashboard/capabilities/matrix heading; badRequests=${JSON.stringify(log.badRequests.slice(-4))}`,
       proposedSolution: 'Check app/dashboard/capabilities/matrix/page.tsx and CapabilityMatrixClient render without throwing.',
     });
     throw new Error('matrix page did not render — aborting suite');
   }
-  await tenantSelect.selectOption(tenantId).catch(() => {});
-  await page.waitForTimeout(1200); // client re-navigates with ?tenant_id=, server component re-fetches
 
   const roleSelect = page.locator('#matrix-role');
   const roleOptionText = await roleSelect.locator('option').allInnerTexts().catch(() => []);

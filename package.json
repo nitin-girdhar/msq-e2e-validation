@@ -1,7 +1,7 @@
 {
   "name": "msq-e2e",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "End-to-end UI + backend validation harness across all MSQ platform tools and roles.",
   "scripts": {
@@ -38,7 +38,33 @@
     "reg:issue2": "node suites/capability/apiclients-fresh-revoke.mjs",
     "reg:issue3": "node suites/lms/crossorg-subresource-authority.mjs",
     "reg": "node suites/admin/create-user-rls-regression.mjs && node suites/capability/apiclients-fresh-revoke.mjs && node suites/lms/crossorg-subresource-authority.mjs",
-    "tenant": "node suites/tenant/cross-tenant-isolation.mjs"
+    "tenant": "node suites/tenant/cross-tenant-isolation.mjs",
+    "restore": "node restore.mjs",
+    "restore:purge": "node restore.mjs --purge-residue",
+    "auth:refresh": "node auth-refresh.mjs",
+    "data:health": "node suites/data/data-health.mjs",
+    "security:sweep": "node suites/security/api-surface-sweep.mjs",
+    "security:edge": "node suites/security/public-edge.mjs",
+    "core:switch-org": "node suites/core/switch-org.mjs",
+    "core:account": "node suites/core/account-session-lifecycle.mjs",
+    "core:lookup-authz": "node suites/core/core-07-lookup-admin-authz.mjs",
+    "platform:push": "node suites/platform/push-and-stream.mjs",
+    "lms:transfer": "node suites/lms/lead-transfer.mjs",
+    "lms:campaign-types": "node suites/lms/campaign-types-rules.mjs",
+    "lms:analytics-scope": "node suites/lms/analytics-scope.mjs",
+    "hr:employees-reports": "node suites/hr/hr-employees-reports.mjs",
+    "todo:comments-lists": "node suites/todo/task-comments-lists.mjs",
+    "admin:team-contracts": "node suites/admin/team-user-contracts.mjs",
+    "admin:sa-console": "node suites/admin/sa-console.mjs",
+    "conc:transfer": "node suites/concurrency/lms-lead-transfer-race.mjs",
+    "overnight": "node run-all.mjs",
+    "selftest": "node selftest.mjs",
+    "provision": "node provision-readonly.mjs",
+    "ui:roundtrip": "node suites/ui/ui-write-roundtrip.mjs",
+    "security:public-v2": "node suites/security/public-api-v2.mjs",
+    "hr:detail-idor": "node suites/hr/request-detail-idor.mjs",
+    "hr:wfh-summary": "node suites/hr/monthly-summary-wfh.mjs",
+    "openissues": "node gen-openissues.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1"

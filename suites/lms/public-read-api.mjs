@@ -111,8 +111,10 @@ try {
       `HTTP ${noKey.status}`, JSON.stringify(noKey.body), 'publicApiKeyAuth must reject before the route handler runs.');
   }
 } finally {
+  // Revoke BEFORE closing the actor: apiDelete on a closed browser context
+  // throws, the .catch() swallowed it, and every run leaked a live API key.
+  if (clientId) await apiDelete(admin, `${CLIENTS_URL}/${clientId}`).catch(() => {});
   await admin.close();
   await raw.close();
-  if (clientId) await apiDelete(admin, `${CLIENTS_URL}/${clientId}`).catch(() => {});
   console.log(`\ncleaned up api-client key for stamp ${stamp}.`);
 }

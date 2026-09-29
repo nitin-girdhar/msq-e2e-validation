@@ -64,7 +64,7 @@ if (!repMobile) {
   process.exit(0);
 }
 const validPhone = await tryLogin(repMobile, cfg.password, 'valid-phone-with-plus');
-if (!/\/dashboard/.test(validPhone.url) && !/localhost:300[123]/.test(validPhone.url)) {
+if (!/\/dashboard/.test(validPhone.url) && !/^\/(lms|hrms|todo|admin|sa)(\/|$)/.test(new URL(validPhone.url).pathname)) {
   record('core', {
     severity: 'high',
     role: 'sales_representative',
@@ -82,7 +82,7 @@ if (!/\/dashboard/.test(validPhone.url) && !/localhost:300[123]/.test(validPhone
 const bareDigits = repMobile.replace(/^\+91/, '');
 const validBare = await tryLogin(bareDigits, cfg.password, 'valid-phone-bare-10digit-rep1');
 console.log('bare-digit result url:', validBare.url, 'alert:', validBare.alert);
-if (!/\/dashboard/.test(validBare.url) && !/localhost:300[123]/.test(validBare.url)) {
+if (!/\/dashboard/.test(validBare.url) && !/^\/(lms|hrms|todo|admin|sa)(\/|$)/.test(new URL(validBare.url).pathname)) {
   record('core', {
     severity: 'medium',
     role: 'sales_representative',

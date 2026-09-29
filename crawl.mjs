@@ -21,6 +21,14 @@ const RX = {
   // mid-crawl logs the role out and every subsequent route bounces to /login.
   logout: /\b(log\s?out|sign\s?out|logout|signout|switch account|switch branch|change branch)\b/i,
   destructive: /\b(delete|remove|deactivate|disable|revoke|archive|discard|reset password|terminate)\b/i,
+  // Controls that act IMMEDIATELY on click, with no form in between — the
+  // super-admin Meta console (Sync campaigns / Pull leads / Apply run / Remap /
+  // Retry / Ignore), lead-assignment Re-run, CAPI resend, key rotation,
+  // transfers, face-review Clear. They used to fall through to 'other', which
+  // IS clicked; on production-refresh data that means real Meta Graph calls
+  // and real leads re-assigned or ignored. Inventoried, never fired — the
+  // dedicated suites exercise these through the API, deliberately.
+  sideEffect: /\b(sync|pull|fetch leads|retry|ignore|remap|apply(?! for)|re-?run|run now|run|import|transfer|clear|resend|notify|send|publish|rotate|regenerate|enroll|activate|enable|mark (as )?(done|complete|read)|move|merge|restore|test rules?)\b/i,
   openForm: /\b(add|create|new|edit|update|invite|assign|reassign|adjust|configure|apply for|request|punch|check ?in|check ?out|regulari[sz])\b/i,
   submit: /\b(save|submit|confirm|approve|reject|create account|send|update)\b/i,
   safe: /\b(view|details|open|filter|search|export|download|refresh|next|prev|previous|show|expand|collapse|sort|today|month|week|day|team|mine|all)\b/i,
@@ -132,26 +140,35 @@ async function crawlDropdowns(page, log, ctx) {
 // Classify and exercise buttons. Safe/openForm buttons are actually clicked
 // (openForm ones are cancelled out); destructive ones are only inventoried.
 async function crawlButtons(page, log, ctx) {
-  const inventory = { safe: [], openForm: [], destructive: [], submit: [], other: [] };
+  const inventory = { safe: [], openForm: [], destructive: [], sideEffect: [], submit: [], other: [] };
   const buttons = page.locator('button:visible, a[role="button"]:visible, [role="button"]:visible');
   const total = Math.min(await buttons.count().catch(() => 0), 18);
   const labels = [];
+  const titles = [];
   for (let i = 0; i < total; i++) {
     const t = (await buttons.nth(i).innerText().catch(() => '')).trim().slice(0, 40);
     labels.push(t);
+    titles.push(await buttons.nth(i).getAttribute('title').catch(() => null));
   }
   for (let i = 0; i < labels.length; i++) {
     const rawLabel = labels[i];
     const label = rawLabel || `btn#${i}`;
-    const kind = RX.logout.test(label) ? 'logout'
+    // The shell's BranchSwitcher chip (title="Branch: <name>") is labelled with
+    // the branch NAME, so text classification cannot see it. Choosing a branch
+    // calls /auth/switch-org, which revokes the stored session's jti — every
+    // later route for this role would bounce to /login. Treat it as a session
+    // control.
+    const isBranchSwitch = /^Branch:/i.test(titles[i] || '');
+    const kind = (isBranchSwitch || RX.logout.test(label)) ? 'logout'
       : RX.destructive.test(label) ? 'destructive'
+      : RX.sideEffect.test(label) ? 'sideEffect'
       : RX.openForm.test(label) ? 'openForm'
       : RX.submit.test(label) ? 'submit'
       : RX.safe.test(label) ? 'safe' : 'other';
     (inventory[kind] ??= []).push(label);
 
-    // Never auto-fire: destructive, submit, logout/account controls.
-    if (kind === 'destructive' || kind === 'submit' || kind === 'logout') continue;
+    // Never auto-fire: destructive, side-effecting, submit, logout/account controls.
+    if (kind === 'destructive' || kind === 'sideEffect' || kind === 'submit' || kind === 'logout') continue;
     // Skip icon-only buttons with no accessible text — a name:'' match would
     // resolve to an arbitrary button (often the avatar/sign-out menu).
     if (!rawLabel || !rawLabel.trim()) continue;

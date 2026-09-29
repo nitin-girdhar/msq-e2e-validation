@@ -25,13 +25,17 @@
 //
 //   node suites/hr/request-detail-approval-chain.mjs
 import { APPS, record, roleMeta } from '../../lib.mjs';
+import { leaveTypeFor, seedLeaveBalance } from '../../fixtures.mjs';
 import { actor, apiGet, apiPost } from '../../conc.mjs';
 import { dbReachable, scalar, q, lit } from '../../db.mjs';
+const LEAVE_TYPE = leaveTypeFor(roleMeta('sales_representative').email);
 
 const TOOL = 'hr';
 const HR = APPS['hr-web'];
 const REQUESTER = 'sales_representative';
-const APPROVER = 'org_admin';
+// rep1's L2 approver in the reporting line, holding hr.leave.view + approve
+// (org_admin holds no HR capability in Fitclass, so it 403'd at the route gate).
+const APPROVER = 'org_manager';
 
 if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit(0); }
 
@@ -51,8 +55,9 @@ let regId = null;
 try {
   // ── LEAVE detail ───────────────────────────────────────────────────────────
   const d = (offset) => { const x = new Date(); x.setDate(x.getDate() + offset); return x.toISOString().slice(0, 10); };
+  seedLeaveBalance(roleMeta(REQUESTER).email, LEAVE_TYPE, 2, `E2E-detail-seed-${stamp}`);
   const apply = await apiPost(rep, `${HR}/api/hr/leave/requests`, {
-    leave_type_name: 'casual', start_date: d(25), end_date: d(25), reason: `E2E-detail-${stamp}`,
+    leave_type_name: LEAVE_TYPE, start_date: d(25), end_date: d(25), reason: `E2E-detail-${stamp}`,
   });
   leaveId = apply.body?.data?.id ?? apply.body?.id ?? null;
   console.log(`1. apply leave     http=${apply.status} id=${leaveId}`);
@@ -136,6 +141,7 @@ try {
   await approver.close();
   if (leaveId) {
     q(`DELETE FROM hr.leave_ledger WHERE leave_request_id=${lit(leaveId)}`);
+    q(`DELETE FROM hr.leave_ledger WHERE note=${lit(`E2E-detail-seed-${stamp}`)}`);
     q(`DELETE FROM hr.leave_request_approvals WHERE leave_request_id=${lit(leaveId)}`);
     q(`DELETE FROM hr.leave_request_status_log WHERE request_id=${lit(leaveId)}`);
     q(`DELETE FROM hr.leave_requests WHERE id=${lit(leaveId)}`);

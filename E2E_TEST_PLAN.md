@@ -108,6 +108,7 @@ Each case names the expectation and, where relevant, the backend table/error to 
 
 | ID | Case | Status | Verify |
 |---|---|---|---|
+| CONC-UI | Leave approval race with rep1's real L1 approver (two tabs) — currently blocked: that approver lacks hr.leave.approve (openissues #4b). | `concurrency/hr-leave-approval-race.mjs` |
 | HR-R-01 | Submit regularization for an unmarked day → row in `hr.attendance_regularizations`, appears in "My regularizations" | **[HAVE]** | `hr-regularization.mjs` |
 | HR-R-02 | Admin/manager sees it in pending queue and **approves** → day flips, leaves queue | **[HAVE]** | same |
 | **HR-R-03** | **Reject** with comment → status `rejected`, comment stored, day not flipped | **[GAP]** | `rejectRegularization` |
@@ -293,6 +294,92 @@ has explicitly added a case for. This pass (a) fixed the one case that had
 silently gone dead, and (b) added cases for the two brand-new capabilities.
 Capabilities belonging to screens this pass did not touch are exactly as
 covered (or not) as they were on 2026-07-29.
+
+## 4d. Coverage pass 2026-09-28 (single origin, Meta console, campaign types, transfer, team edit)
+
+Between 2026-08-09 and 2026-09-28 the product shipped ~40 commits (PWA + single
+origin, branch switcher, bulk/branch transfer, campaign types + ordered rules,
+Meta lead fetch screens, Team edit/HR sync, canonical emails, attendance
+reports). When this pass started, **150 of the gateway's 241 routes** were not
+referenced by any suite, and the harness itself could no longer reach the apps.
+
+### Harness drift fixed (a run before this would have been ~all false positives)
+
+| Area | Drift | Fix |
+|---|---|---|
+| `roles.json` / `lib.mjs` | Apps moved to ONE origin behind Caddy with a compiled Next `basePath` (`/lms /hrms /todo /admin /sa`); the session cookie is host-only on `app.localhost`. Every `localhost:300x` URL 404'd and every `cfg.gateway` (`:4000`) call carried no cookie → 401. | `lib.mjs` derives apps from `origin + prefixes` (override `E2E_ORIGIN`); authenticated API calls go through `${origin}/api` (auth-web rewrite); `gatewayDirect` only for the unauthenticated edge. |
+| Node DNS | Node on Windows does not resolve `*.localhost` (Chromium does) → `ENOTFOUND` for every API/actor call. | In-process `dns.lookup` shim in `lib.mjs` (no hosts-file edit needed). |
+| Scraped hrefs | Next renders links WITH the basePath; `APP + href` produced `/sa/sa/...`. | `absUrl()` / `appPath()`; used in `driver.mjs`, `lookup-crud`, `lookup-module-nav`, `tab-authz-consistency`. |
+| `crawl.mjs` | Buttons classified `other` ARE clicked. The new SA screens' **Sync / Pull / Apply / Remap / Retry / Ignore / Re-run** buttons would have fired real Meta Graph calls and re-assigned/ignored real leads on production-refresh data. The BranchSwitcher chip (labelled with the branch name) could call switch-org, which revokes the stored session. | New `sideEffect` class (inventoried, never fired); `title="Branch: …"` treated as a session control. |
+| Login rate limit | `/auth/login` + `/auth/switch-org` share 10/min per IP; the harness is one IP and logs in ~20 accounts → 429 reported as "stuck-on-login". | `auth-setup.mjs` waits out `Retry-After`; `conc.freshLogin()` / `with429Retry()`. |
+| User cleanup | Creating a user now writes `iam.user_org_mapping` + `hr.employee_profiles` (`ON DELETE RESTRICT`), so the bare `DELETE FROM iam.users` failed silently and leaked accounts. | FK-aware `fixtures.purgeById()` / `purgeE2eUsers()`. |
+| `public-read-api` / `public-report-api` | Revoked the API key AFTER closing the actor → every run leaked a live key. | Revoke before close. |
+| `core-07-lookup-admin-authz` | Expected a redirect; since c2fba5e non-SA get an in-place "Access restricted"; and `super_admin` is now in roles.json (would self-report a bypass). | Accepts the panel; super_admin is the positive control; new console pages added. |
+| `run-all.mjs` | Findings accumulated across runs; no per-stage timeout; a crashed suite looked clean. | Archives previous results, per-stage timeout, `results/run-ledger.json` rendered at the top of SUMMARY.md, restore at start/end, `auth-refresh` between bands. |
+
+### New coverage
+
+| ID | Case | Suite |
+|---|---|---|
+| SEC-01 | Every gateway route (parsed from `server.ts`, incl. loop-registered lookup slugs) × every login + tenant B + anonymous: anon → 401 on every method; no 5xx; no leaked stack/SQL; `{success,data}` envelope; SA-only routes 403 below super_admin; tenant-A object routes denied to tenant B; slow (>8 s) GETs | `security/api-surface-sweep.mjs` |
+| SEC-02 | Partner API scope per route, single-branch key binding, `/public/v1/users` has no credential fields, key **rotation** kills the old key, intake/Meta webhook key + forged HMAC, Meta verify-token echo, JWKS has no private params, security headers, CORS does not reflect a foreign origin | `security/public-edge.mjs` |
+| ID-10 | Branch switcher: my-orgs == data coverage (and never another tenant), `can_view_all` only tenant-wide, switch → `/auth/me` + lead list follow, **old token revoked**, unmapped / other-tenant / all-branches refusals, refusal keeps the session | `core/switch-org.mjs` |
+| ID-11 | Throwaway account: canonical-email login, change-password wrong/weak/ok, other sessions die on change (pwd_iat), old password dead, logout revokes | `core/account-session-lifecycle.mjs` |
+| ID-12 | Team contracts: lowercase email + case-dup 409, escalation via `org_assignments.role_id`, cross-tenant branch/role, **edit keeps manager**, PATCH 200 `hr_profile_synced` + `hr.employee_profiles` follows, API-level email edit, reset-password on a higher rank (throwaway victim), `?tenant_id=` SA-only, role catalog ceiling, manager candidates / weights never cross tenants, weights validation | `admin/team-user-contracts.mjs` |
+| LMS-14 | Branch transfer: capability matrix, source closed out + copy + link, timeline/history on a transferred lead, refusals are 4xx (same branch, re-transfer, missing, other tenant, other branch, tenant B caller), tenant_admin from a non-current branch, follow-up write ⊄ read | `lms/lead-transfer.mjs` |
+| LMS-15 | Two simultaneous transfers of one lead → exactly one copy | `concurrency/lms-lead-transfer-race.mjs` |
+| LMS-16 | Campaign types + ordered rules: view/manage matrix, CRUD in `marketing.*`, default/in-use deletes, first-match-wins, reorder flips the winner (order restored exactly), tenant B isolation incl. rule-test matching, `?tenant_id=` SA-only | `lms/campaign-types-rules.mjs` |
+| LMS-17 | Every analytics/report endpoint × role: all org/user ids inside the caller's covered branches / tenant; report-send gate | `lms/analytics-scope.mjs` |
+| HR-E-01 | Employees/departments/designations matrices, profile + balance + ledger IDOR (rep → peer, tenant B → A), attendance reports json/csv/xlsx content + bad month + tenant scoping, face-review gate, `/hr/me`/`modules`/`today-state` never 5xx | `hr/hr-employees-reports.mjs` |
+| TODO-10 | Private task/list: owner comment + status history recorded; rep2 and tenant B cannot read/comment/see history/rename/delete | `todo/task-comments-lists.mjs` |
+| SA-01 | Every new /sa screen renders for SA; SA actions refused at the edge for tenant/org admins; tenant-modules phantom tenant; **Tasks module off → task API 403, on → restored** (journalled); catalog drift surfaced | `admin/sa-console.mjs` |
+| PLAT-01 | Push subscribe ignores a smuggled `user_id`; another user cannot unsubscribe my device; SSE stream handshake per role | `platform/push-and-stream.mjs` |
+| DATA-01 | Postgres invariants: RLS policies missing service logins, org/tenant tables without RLS, roles without `platform.write`, dead grants under denied parents, branches with no weighted assignee, pools ≠ 100, orphaned lead owners, cross-tenant campaign types / mappings / managers, email canonical/dups, HR profile sync gaps, stuck Meta inbox, harness residue | `data/data-health.mjs` |
+
+### Suspected defects found by reading the code (the run confirms or clears them)
+
+| Where | Suspicion | Probed by |
+|---|---|---|
+| `msq-lms leads.repository.ts` `transferLead` | `throw new Error('Lead not found or already inactive')` / `('Target org not found or not in the same tenant')` are not AppErrors → **500** for re-transfer, wrong branch, cross-tenant target | LMS-14 |
+| same | Source read without `FOR UPDATE`; closing UPDATE does not re-check `is_active` → **double transfer** under concurrency | LMS-15 |
+| same | Source lookup pinned to `ctx.org_id` → tenant_admin cannot transfer a lead from a non-current branch (500) | LMS-14 |
+| `identity-service auth.repository.ts` `getUserOrgs` | Mapped orgs are not filtered by tenant → a stray cross-tenant mapping would appear in the branch picker | ID-10, DATA-01 IAM-2 |
+| `users.service updateUser` | Email is read-only in the Team modal only; the API still accepts `email` | ID-12 (low, confirm intent) |
+| `admin-service tenant-modules.service put` | Four separate service transactions (not atomic) and no tenant-existence check | SA-01 |
+
+### Still not covered
+
+- Meta webhook **happy path** (signed payload → inbox → lead): needs the app secret; only the rejection paths are covered.
+- Lead-pull run apply/remap and assignment re-run **as super_admin**: deliberately not fired (external Graph calls / mass re-assignment). Needs a sandboxed tenant with a stubbed Graph.
+- WhatsApp / email **sends**: gating only, never fired.
+- Speech-to-text inputs (browser mic permission).
+- `read_only` role: still no active user in the restored data.
+
+## 4e. Coverage pass 2026-09-29 (UI write round trip, read_only, Partner API v2, HR detail routes)
+
+### Harness drift fixed
+
+| Area | Drift | Fix |
+|---|---|---|
+| `read_only` | No real read_only user in the production-refresh data → rank 0 never tested. | `provision-readonly.mjs` (first stage of `run-all`, before preflight) creates `readonly.fitclass@e2e-fixture.test` **through the Team API** as tenant_admin. `@e2e-fixture.test`, not `@e2e.local`, so residue purges leave it alone. Tenant B has its read_only role deactivated (tenant config) → no tenant-B read_only login. |
+| Harness passwords | A production refresh of the local DB restores real hashes → 11/17 logins "stuck-on-login". | `provision-readonly.mjs` re-aligns every `roles.json` login to the dev password (local DB only) and clears lockouts, each run. |
+| Leave suites | Hardcoded `casual`; the refreshed data has only an active `sick` policy, and org_admin has no `hr.leave.adjust` in FitClass → every leave suite reported "apply failed". | `fixtures.leaveTypeFor(email)` (a type with an active policy for the user's branch) and `fixtures.seedLeaveBalance()` (precondition ledger row, deleted by note). Used by leave-lifecycle, request-detail-*, hr-admin-matrix, hr-leave-approval-race. |
+| `fixtures.purgeById` | Selecting `id` from a child without one (`hr.employee_profiles`, `lms.lead_assignment_weights`) threw into the catch and **skipped that child's DELETE** → throwaway users leaked as soft-deleted rows. | Recurse only into children that have an `id` column. |
+| Fixture leads | Seeded as super_admin, who is homed in tenant B → leads got tenant B's campaign type, and RLS hid them. | Seed with the tenant_admin of the actor's own tenant; set the campaign type the owner's department works; place it in the actor's LIVE session branch (`/auth/me`). |
+| Cleanup DELETEs | `public.soft_delete_row()` (BEFORE DELETE on ~25 tables) turns any DELETE into `is_deleted=true` and reports success → every purge left residue. | `db.q()` runs DELETE statements as `root_service`, the trigger's hard-delete path (FK cascades still fire). Leads still cannot be hard-deleted (audit history FK RESTRICT) → soft-deleted `E2E*` leads are the floor; LMS-4 ignores deleted rows. |
+| auth-setup | Clicked the FIRST (alphabetical) branch on /select-branch → multi-branch users (org_manager: 4) ran off their home branch, where hr-web correctly hides Apply leave. | Picks the `· Default` (is_home) branch. |
+| Actors / grading | Many suites hardcoded org_admin as the HR actor (Fitclass grants it no HR capability) and graded by rank. | HR suites use hr_admin / tenant_admin / org_manager; user-management, hr-admin-matrix grade by capability; switch-org, face-enroll, capability-matrix-ui (navbar tenant cookie), bulk-assign (`lead_assignment_log`), lookup-module-nav (3 cards), the api-surface sweep (critical only when tenant-A data is returned) corrected; concurrency suites use fixtures and actors that can actually race. |
+| Partial re-runs | Re-running one suite appended its findings next to the stale ones. | `rerun.mjs <suite…>` drops the stage's findings + action shards (by run-ledger window), re-runs, updates the ledger. |
+
+### New coverage
+
+| ID | Case | Suite |
+|---|---|---|
+| UI-01 | As every login (read_only → super_admin + tenant B): Leads Edit (stage/outcome/follow-up/note → Save), Leave Apply, Tasks quick-add, Team New user — performed **in the browser**, the write request captured, the row checked in Postgres, graded by the session's live capability (hidden-for-holder, dead-end control, silent no-op, escalation). | `ui/ui-write-roundtrip.mjs` |
+| UI-02 | Two browsers save different stages + notes on one lead at the same instant: no 5xx, no lost note, stale writer warned. | same, S5 |
+| SEC-03 | Partner API v2 (schema 1.53.0): leads:list / leads:find scope separation; multi-branch, single-branch, tenant-wide and tenant-B keys fenced (every returned id resolved in the DB); out-of-reach branch_id → 400; malformed filters 4xx; phone normalisation / matched_on / not_found; DTO has no raw_webhook_data / metadata / tags / outcome_comment. | `security/public-api-v2.mjs` |
+| HR-D-01 | New gateway detail routes `GET /hr/leave/requests/:id`, `/hr/attendance/regularizations/:id`: owner 200; peer, managers, admins, super_admin, tenant B → 404; anonymous 401; malformed id not 500; 403 only flagged when it differs from a random id's answer. | `hr/request-detail-idor.mjs` |
+| HR-R-01 | `vw_attendance_monthly_summary.wfh_count`: installed view is the fixed one, equals a recount from events, report API == view, report access graded by `hr.attendance.admin.reports.view`. | `hr/monthly-summary-wfh.mjs` |
 
 ---
 

@@ -24,6 +24,7 @@ import { cfg, record, roleMeta } from '../../lib.mjs';
 import { actor, apiPost, apiPatch } from '../../conc.mjs';
 import { runRoleMatrix } from '../../matrix.mjs';
 import { dbReachable, scalar, one, q, lit } from '../../db.mjs';
+import { purgeById, userIdByEmail, purgeE2eUsers } from '../../fixtures.mjs';
 
 const TOOL = 'admin';
 const GATEWAY = cfg.gateway;
@@ -45,7 +46,9 @@ console.log('— create a user (identity management, global rank >= 40) —');
 await runRoleMatrix({
   tool: TOOL, action: 'create a new user (mint an account)',
   endpoint: 'POST /users', area: 'Users', tab: 'Directory',
-  minRank: 40, severityOver: 'critical', severityUnder: 'high',
+  // Graded by the live capability the controller checks (users.controller.ts:
+  // rank >= ORG_ADMIN || admin.team.manage) — rank 40 was a guess.
+  capability: 'admin.team.manage', severityOver: 'critical', severityUnder: 'high',
   act: (a, role) => apiPost(a, USERS, {
     first_name: 'E2E',
     last_name: role.slice(0, 20),
@@ -53,7 +56,10 @@ await runRoleMatrix({
     role_name: 'read_only',
   }),
   verify: (role) => userRow(emailFor(role)) != null,
-  cleanup: (role) => { q(`DELETE FROM iam.users WHERE email=${lit(emailFor(role))}`); },
+  // FK-aware: creating a user now also writes iam.user_org_mapping and (via
+  // hr-service sync) hr.employee_profiles, so a bare DELETE fails on the FK
+  // and silently leaves the throwaway account behind.
+  cleanup: (role) => { purgeById('iam.users', userIdByEmail(emailFor(role))); },
 });
 
 // ── Part 2: admin lifecycle round-trip (as org_admin) ────────────────────────
@@ -71,7 +77,7 @@ const otherOrgId = scalar(
     ORDER BY o.name LIMIT 1`
 );
 const email = emailFor('lifecycle');
-q(`DELETE FROM iam.users WHERE email=${lit(email)}`); // clean any stale run
+purgeById('iam.users', userIdByEmail(email)); // clean any stale run
 
 const a = await actor(ADMIN);
 const fail = (severity, scenario, expected, actual, evidence, fix) => record(TOOL, {
@@ -172,5 +178,5 @@ try {
 }
 
 // ── Cleanup: hard-delete every throwaway user this run created ────────────────
-q(`DELETE FROM iam.users WHERE email LIKE ${lit(`${MARKER}-%@e2e.local`)}`);
+purgeE2eUsers(`${MARKER}-%@e2e.local`);
 console.log(`\ncleaned up throwaway users for marker ${MARKER}.`);

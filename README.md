@@ -17,19 +17,31 @@ admin).
 msq-e2e-validation/
 ├─ roles.json           # every role → one representative login + secondary actors
 ├─ tools.config.mjs     # per-tool surface map: routes, expected nav, write tables
+├─ localenv.mjs         # reads the platform root .env (app URLs, cookie domain, DB container)
 ├─ lib.mjs              # auth-state opener, page visit, finding recorder (path root)
 ├─ db.mjs               # backend verification — reads the live `platforms` DB
 ├─ crawl.mjs            # deep-crawl engine (tabs, dropdowns, buttons, forms)
 ├─ driver.mjs           # runs the crawler for a tool across every role
-├─ conc.mjs             # concurrency helpers (per-actor API context, simultaneous fire)
+├─ conc.mjs             # per-actor API contexts, simultaneous fire, freshLogin + 429 backoff
+├─ matrix.mjs           # run one action as every role; grade by rank OR live capability
+├─ fixtures.mjs         # FK-aware purge, restore journal, leak detector, id extraction
 ├─ auth-setup.mjs       # logs in every role/actor, saves .auth/<key>.json
-├─ report.mjs           # folds findings → results/SUMMARY.md + summary.json
-├─ run-all.mjs          # orchestrator (auth → crawl → concurrency → report)
+├─ auth-refresh.mjs     # re-logs only the stored sessions that stopped working
+├─ restore.mjs          # replays restore journals (+ --purge-residue)
+├─ selftest.mjs         # offline tests of the harness's own logic (no stack needed)
+├─ report.mjs           # folds findings + run ledger → results/SUMMARY.md + summary.json
+├─ run-all.mjs          # orchestrator — safe to leave running overnight
 ├─ suites/
-│  ├─ core/             # auth-web + lookup-admin (identity) — deep crawl + legacy probes
-│  ├─ lms/              # Leads/CRM
-│  ├─ hr/               # Attendance & Leave
+│  ├─ core/             # auth-web + lookup-admin, branch switcher, account lifecycle
+│  ├─ security/         # every gateway route × every login + anonymous; public edge
+│  ├─ data/             # Postgres invariants (RLS, grants, weights, sync gaps)
+│  ├─ lms/              # Leads/CRM, transfer, campaign types & rules, analytics scope
+│  ├─ hr/               # Attendance & Leave, employees, reports
 │  ├─ todo/             # Tasks
+│  ├─ admin/            # admin-web + /sa console, Team contracts
+│  ├─ platform/         # web push + notifications stream
+│  ├─ tenant/           # cross-tenant isolation
+│  ├─ capability/       # capability toggles
 │  └─ concurrency/      # multi-user conflict scenarios
 └─ results/             # findings-<tool>.json, <tool>-coverage.json, SUMMARY.md
 ```
@@ -38,27 +50,100 @@ msq-e2e-validation/
 `results/`) relative to itself, so suite scripts in `suites/<tool>/` only ever
 `import … from '../../lib.mjs'` — no suite needs to know how deep it is nested.
 
+## Running on this laptop
+
+Everything — Postgres, the services, the six web apps and this harness — runs
+locally. The harness reads the platform root `.env` (`../.env`, via
+`localenv.mjs`) for the app URLs (`AUTH_URL`, `LMS_URL`, `HR_URL`, `TASK_URL`,
+`ADMIN_WEB_URL`, `ADMIN_URL`), the gateway (`NEXT_PUBLIC_API_URL`), the cookie
+domain and the DB container (`DB_CONTAINER_NAME`, `DB_NAME`, `POSTGRES_USER`),
+so it always browses exactly what the stack was configured to serve. Pick ONE
+of the two local shapes and start it from the platform root:
+
+| | A. Full docker + proxy (current `.env`) | B. Native `pnpm` dev |
+| --- | --- | --- |
+| Start | `docker compose --profile sso-proxy up -d --build` | `make dev` (Postgres in docker + `pnpm turbo dev`) |
+| URLs in `.env` | `AUTH_URL=http://app.localhost`, `LMS_URL=http://app.localhost/lms`, … | the commented block: `AUTH_URL=http://localhost:3000`, `LMS_URL=http://localhost:3001/lms`, … |
+| `COOKIE_DOMAIN` | `app.localhost` | `localhost` |
+| Proxy | Caddy on :80 (opt-in `sso-proxy` profile — without it `app.localhost` does not answer) | none |
+
+The two `.env` settings must match the shape you start: a cookie domain that
+does not cover the app host makes every login silently bounce back to
+`/login`. `npm run preflight` prints the resolved topology and fails fast with
+the exact fix for: Docker not responding (Rancher Desktop Hyper-V hang →
+`wsl --shutdown`, relaunch), DB container not running, cookie domain / host
+mismatch, proxy not up, gateway down, apps not serving their routes.
+
+`E2E_MODE=ports` forces shape B's URLs without editing `.env` (the stack's
+`COOKIE_DOMAIN` must still be `localhost`); `E2E_ORIGIN=<url>` forces one origin.
+
+Laptop safeguards in `run-all.mjs`: the machine is kept awake for the duration
+of the run (a helper holds `ES_SYSTEM_REQUIRED` and exits with the run; the
+screen may still turn off — `E2E_ALLOW_SLEEP=1` disables it); a stage that
+exceeds its timeout is killed **with its whole process tree** (`taskkill /T`),
+so its Chromium windows do not pile up and starve later stages; every DB query
+has a 60 s timeout (`MSQ_DB_TIMEOUT_MS`) so a hung Docker daemon fails a query
+instead of freezing a stage. Plug the laptop in and keep Docker/Rancher running.
+
 ## Prerequisites
 
-1. **Postgres** running as container `msq-db-server`, database `platforms`
-   (the harness reads it via `docker exec` — no local psql needed).
-2. **All web apps up** on their dev ports:
-   | app | port | tool |
-   | --- | --- | --- |
-   | auth-web | 3000 | core / identity |
-   | lms-web | 3001 | Leads / CRM |
-   | hr-web | 3002 | HR |
-   | todo-web | 3003 | Tasks |
-   | lookup-admin | 3005 | Lookup admin |
+1. **Postgres** running as the stack's DB container (`DB_CONTAINER_NAME` from
+   the platform `.env`, default `msq-db-server`), database `DB_NAME`
+   (`platforms`) — read via `docker exec`, no local psql needed.
+2. **The local stack**, in one of the two shapes above. All six web apps are
+   compiled with a Next `basePath`:
 
-   From the repo root: `make dev` (or `pnpm turbo dev`) brings up Postgres + all
-   services + web apps.
+   | app | shape A | shape B | tool |
+   | --- | --- | --- | --- |
+   | auth-web | `http://app.localhost/` | `http://localhost:3000/` | core / identity |
+   | lms-web | `http://app.localhost/lms` | `http://localhost:3001/lms` | Leads / CRM |
+   | hr-web | `http://app.localhost/hrms` | `http://localhost:3002/hrms` | HR |
+   | todo-web | `http://app.localhost/todo` | `http://localhost:3003/todo` | Tasks |
+   | admin-web | `http://app.localhost/admin` | `http://localhost:3004/admin` | Admin console |
+   | lookup-admin | `http://app.localhost/sa` | `http://localhost:3005/sa` | Super-admin console |
+   | gateway | `<auth>/api/*` rewrite + `http://localhost:4000` | same | API |
+
+   Authenticated API calls go to `<auth-web URL>/api/...` so the session cookie
+   is sent; the direct gateway URL is used only for the unauthenticated edge.
+   Node on Windows cannot resolve `*.localhost` — `lib.mjs` maps it to
+   127.0.0.1 in-process, so no hosts-file change is needed.
 3. `pnpm install` in this folder, then `npx playwright install chromium` once.
+4. The platform monorepo checked out next to this folder
+   (`../msq-core/services/api-gateway/src/server.ts`, `../.env`) — the
+   API-surface sweep parses the live route table, lib/db read the `.env`.
 
-Override DB access with env vars if needed: `MSQ_DB_CONTAINER`, `MSQ_DB_NAME`,
-`MSQ_DB_USER`.
+Environment overrides: `E2E_PLATFORM_ENV` (path to the platform `.env`),
+`E2E_ORIGIN`, `E2E_MODE=ports`, `E2E_GATEWAY_DIRECT`, `E2E_GATEWAY_SRC`,
+`E2E_SLOW_MS` (slow-endpoint threshold, default 8000), `E2E_RACE_ROUNDS`
+(default 5), `E2E_ALLOW_SLEEP=1`, `MSQ_DB_CONTAINER`, `MSQ_DB_NAME`,
+`MSQ_DB_USER`, `MSQ_DB_TIMEOUT_MS`.
 
 ## Running
+
+### Overnight
+
+```bash
+npm run selftest   # seconds, no stack needed: the harness's own logic is sound
+npm run preflight  # stack reachable, schema/roles/routes match the suites
+npm run overnight  # = node run-all.mjs — the full pass, unattended
+```
+
+`run-all.mjs` archives the previous `results/` to `results/_archive/<stamp>/`,
+replays any pending restore journal, logs everyone in, then runs every band
+with a per-stage timeout (a hung suite is killed, logged and skipped). It
+re-checks stored sessions between bands (`auth-refresh.mjs`) and restores
+config at the end. In the morning read `results/SUMMARY.md` top-down:
+
+1. **Run ledger** — any stage that crashed or timed out left its area UNTESTED.
+2. **Triage — critical & high** — one line per finding.
+3. Per-tool sections — expected / actual / evidence / **proposed fix** (the root
+   cause pointer: file, function, and why).
+
+Throwaway data is marked (`@e2e.local` users, `E2E-*` leads/tasks, `e2e_*`
+campaign types) and purged by each suite; `npm run restore:purge` removes any
+residue a killed run left behind.
+
+### Manual
 
 ```bash
 # 1. Log in every role once (writes .auth/<role>.json + .auth/rep2.json, rep3.json)
@@ -95,6 +180,9 @@ npm run hr:split-shift
 | **Concurrency** | Two users on one record behave safely. | `npm run conc:*` |
 | **Visual** | Layout holds up on phone/tablet/laptop/desktop. | `npm run visual` |
 | **Analysis** | Tab visibility matches route reachability. | `npm run analyze:tabs` |
+| **API surface** | Every gateway route (parsed from source) × every login + anonymous: no unauthenticated access, no 5xx, no leaked internals, SA-only stays SA-only, tenant B cannot read tenant A by id. | `npm run security:sweep` |
+| **Public edge** | API-key scope/binding/rotation, webhook key + HMAC, JWKS, headers, CORS. | `npm run security:edge` |
+| **Data health** | Postgres invariants behind silent failures (RLS policies missing service logins, roles without `platform.write`, branches with no weighted assignee, cross-tenant rows, HR sync gaps). | `npm run data:health` |
 
 ### Role matrix (`matrix.mjs`)
 
@@ -274,6 +362,56 @@ were also updated: they used to assume every lookup table was linked from one
 `/dashboard` page, which stopped being true once tables moved into per-module
 panes at `/dashboard/m/[module]` — both now discover tables by walking every
 module link first.
+
+## Coverage pass 2026-09-28
+
+The full table (case IDs, suspected defects from code reading, and what is
+still not covered) is in `E2E_TEST_PLAN.md` §4d. Suites added:
+
+| Suite | Proves |
+| --- | --- |
+| `security/api-surface-sweep.mjs` | Every gateway route swept per login + anonymous (see Layers). |
+| `security/public-edge.mjs` | Partner API scopes, branch binding, key rotation, webhooks, JWKS, CORS. |
+| `core/switch-org.mjs` | Branch switcher: picker == coverage, switch follows, old token revoked, refusals. Fresh logins only. |
+| `core/account-session-lifecycle.mjs` | Throwaway account: canonical-email login, change-password, pwd_iat invalidation, logout revocation. |
+| `admin/team-user-contracts.mjs` | Lowercase emails, role_id escalation, cross-tenant branch/role, edit keeps manager, HR profile sync, reset-password rank gate, `?tenant_id=` SA-only. |
+| `admin/sa-console.mjs` | New /sa screens render; SA actions refused at the edge; tenant-module entitlement off/on (journalled); catalog drift. |
+| `lms/lead-transfer.mjs` | Branch transfer matrix, close-out, 4xx-not-500 refusals, tenant_admin cross-branch, follow-up write ⊄ read. |
+| `lms/campaign-types-rules.mjs` | Types/rules gates, CRUD, first-match-wins + reorder (restored exactly), tenant isolation. |
+| `lms/analytics-scope.mjs` | Every report row inside the caller's branches/tenant. |
+| `hr/hr-employees-reports.mjs` | Employees matrices, profile/balance/ledger IDOR, attendance report formats + scope. |
+| `todo/task-comments-lists.mjs` | Private task/list guards for comments, history, rename, delete. |
+| `platform/push-and-stream.mjs` | Push subscription identity from session only; SSE handshake per role. |
+| `concurrency/lms-lead-transfer-race.mjs` | Two simultaneous transfers → one copy. |
+| `data/data-health.mjs` | Postgres invariants (see Layers). |
+
+**Safety changes that matter for unattended runs:** the crawler has a
+`sideEffect` class (Sync / Pull / Apply / Remap / Retry / Ignore / Re-run /
+Transfer / Rotate …) that is inventoried and **never clicked**, and treats the
+BranchSwitcher as a session control. Anything that re-mints or kills a session
+(switch-org, change-password, logout) runs on `conc.freshLogin()` sessions or
+throwaway users — never on `.auth/` state. `matrix.mjs` can grade by the
+role's live capabilities (`capability: 'lms.leads.transfer'`) instead of rank,
+and records any 5xx as its own finding.
+
+## Coverage pass 2026-09-29
+
+See `E2E_TEST_PLAN.md` §4e. In short: `provision-readonly.mjs` now runs first
+(creates the read_only login through the Team API and re-aligns harness
+passwords after a production refresh), and three suites were added —
+`ui/ui-write-roundtrip.mjs` (real writes through the browser as every role,
+verified in Postgres, graded by live capability, plus a two-browser same-lead
+race), `security/public-api-v2.mjs` (lead list/find and branch fencing) and
+`hr/request-detail-idor.mjs` / `hr/monthly-summary-wfh.mjs`.
+
+`E2E_ACTORS=role1,role2 node suites/ui/ui-write-roundtrip.mjs [lms,hr,todo,admin,concurrency]`
+narrows the UI round trip for a quick check.
+
+After fixing a suite, re-run just it in place — `node rerun.mjs suites/x.mjs [...]`
+replaces that stage's findings/actions from the last pass — then
+`node report.mjs && node gen-openissues.mjs`. `gen-openissues.mjs` prepends the
+hand-verified `openissues.curated.md` (root cause, control flow, fix per defect) and a
+page × role coverage matrix built from the crawl, and writes `../openissues.md`.
 
 ## Notes
 

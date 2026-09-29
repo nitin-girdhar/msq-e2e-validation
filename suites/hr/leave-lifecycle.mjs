@@ -16,6 +16,7 @@
 //
 //   node suites/hr/leave-lifecycle.mjs
 import { APPS, record, roleMeta } from '../../lib.mjs';
+import { leaveTypeFor, seedLeaveBalance } from '../../fixtures.mjs';
 import { actor, apiPost } from '../../conc.mjs';
 import { dbReachable, scalar, q, lit } from '../../db.mjs';
 
@@ -24,7 +25,7 @@ const HR = APPS['hr-web'];
 if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit(0); }
 
 const stamp = Date.now();
-const LEAVE_TYPE = 'casual';
+const LEAVE_TYPE = leaveTypeFor(roleMeta('sales_representative').email);
 const repId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative').email)} LIMIT 1`);
 const orgId = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(roleMeta('sales_representative').org)} LIMIT 1`);
 const tenantId = scalar(`SELECT tenant_id FROM entity.organizations WHERE id=${lit(orgId)}`);
@@ -59,13 +60,15 @@ const fail = (severity, scenario, expected, actual, evidence, fix) => record(TOO
 });
 
 const rep = await actor('sales_representative');
-const admin = await actor('org_admin');
+const admin = await actor('hr_admin'); // holds hr.leave.approve; Fitclass org_admin has no HR caps
 try {
   // ── Seed a casual balance so apply is never blocked by insufficient balance ──
   const seed = await apiPost(admin, `${HR}/api/hr/leave/adjustments`, {
     user_id: repId, leave_type_name: LEAVE_TYPE, amount: 5, note: `E2E-lifecycle-seed-${stamp}`,
   });
-  console.log(`seed casual +5 for rep1 -> http=${seed.status}`);
+  console.log(`seed ${LEAVE_TYPE} +5 for rep1 -> http=${seed.status}`);
+  // The adjustment endpoint is capability-gated per tenant; the balance is only a precondition here.
+  if (seed.status >= 300) console.log(`  fallback DB seed: ${seedLeaveBalance(roleMeta('sales_representative').email, LEAVE_TYPE, 5, `E2E-lifecycle-seed-${stamp}`)} row`);
 
   // ── 1. APPLY ────────────────────────────────────────────────────────────────
   const apply = await apiPost(rep, `${HR}/api/hr/leave/requests`, {

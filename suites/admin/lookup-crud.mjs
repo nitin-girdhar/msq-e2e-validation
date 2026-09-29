@@ -12,7 +12,7 @@
 // Runs as super_admin (the only role the console admits).
 //
 //   node suites/admin/lookup-crud.mjs
-import { openState, visit, record, APPS } from '../../lib.mjs';
+import { openState, visit, record, APPS, absUrl } from '../../lib.mjs';
 import { dbReachable, rows as dbRows, q, lit } from '../../db.mjs';
 
 const TOOL = 'admin';
@@ -49,7 +49,7 @@ if (moduleHrefs.length === 0) {
 
 const links = [];
 for (const href of moduleHrefs) {
-  await visit(page, APP + href);
+  await visit(page, absUrl(APP, href));
   const tableLinks = await page.locator('a[href*="/dashboard/lookups/"]')
     .evaluateAll((els) => [...new Set(els.map((e) => e.getAttribute('href')))].filter(Boolean))
     .catch(() => []);
@@ -61,7 +61,7 @@ console.log(`Module panes advertise ${uniqueLinks.length} lookup table(s) total`
 
 for (const href of uniqueLinks) {
   const slug = href.split('/').filter(Boolean).pop();
-  const v = await visit(page, APP + href);
+  const v = await visit(page, absUrl(APP, href));
   const is404 = /404|could not be found/i.test(v.bodySnippet || '') || v.heading === '404';
   if (is404) {
     // Already reported by the crawl; keep the inventory honest but don't dupe.
@@ -90,7 +90,7 @@ for (const href of uniqueLinks) {
       scenario: `Open the '${slug}' lookup table as ${ROLE} and read its rows`,
       expected: 'The lookup table lists its configured values',
       actual: 'The table rendered with zero rows — the drill-down shows no values, so the lookup cannot be reviewed or edited.',
-      evidence: `${APP}${href} heading="${v.heading}" body="${(v.bodySnippet || '').slice(0, 160)}"`,
+      evidence: `${absUrl(APP, href)} heading="${v.heading}" body="${(v.bodySnippet || '').slice(0, 160)}"`,
       proposedSolution: 'Check the catalog query/tenant scoping behind this table; if genuinely empty, render an explicit empty-state with a "Add first value" action instead of a bare table.',
     });
   }
@@ -100,7 +100,7 @@ for (const href of uniqueLinks) {
       scenario: `Inspect dropdown option sources on the '${slug}' editor`,
       expected: 'Every dropdown is populated from its lookup source',
       actual: `${emptySelects} of ${selects} dropdown(s) render with no selectable options.`,
-      evidence: `${APP}${href}`,
+      evidence: `${absUrl(APP, href)}`,
       proposedSolution: 'Ensure the option source for these selects is fetched (and tenant-scoped) before the editor renders; show a loading/empty state rather than an empty control.',
     });
   }

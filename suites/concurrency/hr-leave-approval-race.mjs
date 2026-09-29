@@ -10,13 +10,18 @@
 //
 //   node suites/concurrency/hr-leave-approval-race.mjs
 import { APPS, record, cfg, roleMeta } from '../../lib.mjs';
+import { leaveTypeFor, seedLeaveBalance } from '../../fixtures.mjs';
 import { actor, apiPost, apiGet, simultaneously } from '../../conc.mjs';
 import { dbReachable, one, scalar, lit } from '../../db.mjs';
+const LEAVE_TYPE = leaveTypeFor(roleMeta('sales_representative').email);
 
 const TOOL = 'concurrency';
 const HR = APPS['hr-web'];
 const REQUESTER = 'sales_representative';
-const APPROVERS = ['org_manager', 'org_admin'];
+// rep1's resolved L1 approver (Chirag, senior_sales_executive) submitting from
+// two tabs at once — the realistic double-approve. org_manager is only L2 (403
+// at L1) and hr_admin works another branch (404), so neither pair ever raced.
+const APPROVERS = ['senior_sales_executive', 'senior_sales_executive'];
 
 if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit(0); }
 
@@ -42,7 +47,7 @@ if (!reqId) {
   const offset = 30 + Math.floor(Math.random() * 120);
   const start = futureDate(offset), end = futureDate(offset);
   let created = await apiPost(rep, `${HR}/api/hr/leave/requests`, {
-    leave_type_name: 'casual', start_date: start, end_date: end, reason: 'E2E concurrency probe',
+    leave_type_name: LEAVE_TYPE, start_date: start, end_date: end, reason: 'E2E concurrency probe',
   });
   if (created.status === 400) {
     // Ensure both preconditions for apply: an active policy AND a non-zero
@@ -52,19 +57,21 @@ if (!reqId) {
     const orgId = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(roleMeta('sales_representative').org)} LIMIT 1`);
     const admin = await actor('org_admin');
     const pol = await apiPost(admin, `${HR}/api/hr/leave/policies`, {
-      leave_type_name: 'casual', org_id: orgId, accrual_frequency: 'yearly', accrual_amount: 12,
+      leave_type_name: LEAVE_TYPE, org_id: orgId, accrual_frequency: 'yearly', accrual_amount: 12,
       min_notice_days: 0, allow_half_day: true, approval_levels: 1, applicable_from: new Date().toISOString().slice(0, 10),
     });
     console.log(`Bootstrap casual policy (org_admin) -> ${pol.status}`);
     // The rep starts with 0 accrued balance; credit some so apply can succeed.
     const repUserId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative').email)} LIMIT 1`);
     const adj = await apiPost(admin, `${HR}/api/hr/leave/adjustments`, {
-      user_id: repUserId, leave_type_name: 'casual', amount: 5, note: 'E2E concurrency bootstrap',
+      user_id: repUserId, leave_type_name: LEAVE_TYPE, amount: 5, note: 'E2E concurrency bootstrap',
     });
-    console.log(`Bootstrap casual balance (org_admin) -> ${adj.status}`);
+    console.log(`Bootstrap ${LEAVE_TYPE} balance (org_admin) -> ${adj.status}`);
+    // Adjustments are capability-gated per tenant; the balance is a precondition only.
+    if (adj.status >= 300) console.log(`  fallback DB seed: ${seedLeaveBalance(roleMeta('sales_representative').email, LEAVE_TYPE, 5, 'E2E concurrency bootstrap')} row`);
     await admin.close();
     created = await apiPost(rep, `${HR}/api/hr/leave/requests`, {
-      leave_type_name: 'casual', start_date: start, end_date: end, reason: 'E2E concurrency probe',
+      leave_type_name: LEAVE_TYPE, start_date: start, end_date: end, reason: 'E2E concurrency probe',
     });
   }
   console.log(`Create leave request -> ${created.status}`);

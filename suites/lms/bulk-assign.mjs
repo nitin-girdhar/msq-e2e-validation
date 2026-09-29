@@ -51,9 +51,11 @@ const leadIds = candidateLeads.map((r) => r.id);
 const priorAssignees = new Map(candidateLeads.map((r) => [r.id, r.assigned_user_id]));
 
 const assignedTo = (id) => scalar(`SELECT assigned_user_id FROM lms.marketing_leads WHERE id=${lit(id)}`);
-const activityFor = (id, actionType) => scalar(
-  `SELECT COUNT(*) FROM lms.lead_activity_log WHERE lead_id=${lit(id)} AND action_type=${lit(actionType)}
-     ORDER BY created_at DESC LIMIT 1`);
+// The assignment trail lives in lms.lead_assignment_log (action: initial |
+// reassigned | unassigned | self_assigned); lms.lead_activity_log no longer exists.
+const activityFor = (id, action, to) => scalar(
+  `SELECT COUNT(*) FROM lms.lead_assignment_log WHERE lead_id=${lit(id)} AND action=${lit(action)}
+     AND assigned_to_id=${lit(to)} AND assigned_at > now() - interval '10 minutes'`);
 
 const fail = (severity, scenario, expected, actual, evidence, fix) => record(TOOL, {
   severity, role: ACTOR_ROLE, tool: TOOL, page: 'Bulk Assign', scenario, expected, actual,
@@ -128,11 +130,11 @@ try {
       'A valid same-org, in-rank bulk assignment must succeed for all leads in the batch (all-or-nothing update).');
   } else {
     for (const { id, prior } of before) {
-      const expectedAction = prior ? 'assignment_reassigned' : 'assignment_created';
-      const logged = Number(activityFor(id, expectedAction) ?? 0) > 0;
+      const expectedAction = prior ? 'reassigned' : 'initial';
+      const logged = Number(activityFor(id, expectedAction, repId) ?? 0) > 0;
       if (!logged) {
         fail('low', `Activity log entry for a bulk-assigned lead (prior assignee=${prior ?? 'none'})`,
-          `An lms.lead_activity_log row with action_type=${expectedAction}`,
+          `An lms.lead_assignment_log row with action=${expectedAction}`,
           `No matching activity row found for lead ${id}`, `leadId=${id}`,
           'Confirm logActivity is awaited (Promise.all(updated.map(...))) for every lead in the batch, not just the first.');
       }

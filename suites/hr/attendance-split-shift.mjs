@@ -33,7 +33,9 @@ import { dbReachable, scalar, q, rows, lit } from '../../db.mjs';
 
 const TOOL = 'hr';
 const HR = APPS['hr-web'];
-const ADMIN_ROLE = 'org_admin'; // holds HR_ATTENDANCE_ADMIN_ASSIGNMENTS_MANAGE + HR_ATTENDANCE_PHOTO_VIEW
+// tenant_admin, not org_admin: FitClass grants org_admin no HR capabilities at
+// all (tenant config), so an org_admin shift create is a correct 403.
+const ADMIN_ROLE = 'tenant_admin'; // holds HR_ATTENDANCE_ADMIN_ASSIGNMENTS_MANAGE + HR_ATTENDANCE_PHOTO_VIEW
 const EMPLOYEE_ROLE = 'sales_representative'; // rep1 — reused the same way attendance-geofence-guard.mjs does
 
 if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit(0); }

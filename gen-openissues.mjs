@@ -18,7 +18,7 @@ import { TOOLS } from './tools.config.mjs';
 
 const SEV = ['critical', 'high', 'medium', 'low', 'info'];
 const sevRank = (s) => { const i = SEV.indexOf(String(s || 'info').toLowerCase()); return i < 0 ? SEV.length : i; };
-const TOOL_LABEL = { ...Object.fromEntries(Object.entries(TOOLS).map(([k, v]) => [k, v.label])), concurrency: 'Multi-user / Concurrency', tenant: 'Cross-tenant isolation', capability: 'Capability toggling', admin: 'Lookup Admin' };
+const TOOL_LABEL = { ...Object.fromEntries(Object.entries(TOOLS).map(([k, v]) => [k, v.label])), concurrency: 'Multi-user / Concurrency', tenant: 'Cross-tenant isolation', capability: 'Capability toggling', security: 'API surface & partner API', data: 'Data health (Postgres invariants)', admin: 'Admin console (admin-web) + SA console' };
 const esc = (s) => String(s ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim();
 
 // ── load ────────────────────────────────────────────────────────────────────
@@ -81,6 +81,65 @@ for (const t of tools) {
   p(`| ${TOOL_LABEL[t] || t} | ${c.critical} | ${c.high} | ${c.medium} | ${c.low} | ${c.info} |`);
 }
 p('');
+
+// ── Verified issues (hand-authored) ─────────────────────────────────────────
+// Every critical/high the suites raise is re-checked against the code and the
+// live stack before it is called a defect; the verdicts, root causes, control
+// flow and fixes live in openissues.curated.md and lead the report.
+const curated = path.join(dir, 'openissues.curated.md');
+if (fs.existsSync(curated)) { p(fs.readFileSync(curated, 'utf8').trimEnd()); p(''); }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PART A0 — PAGE COVERAGE (every role x every page the crawler opened)
+// ═══════════════════════════════════════════════════════════════════════════
+const covFiles = fs.existsSync(resultsDir) ? fs.readdirSync(resultsDir).filter((f) => /^[a-z]+-coverage\.json$/.test(f)) : [];
+if (covFiles.length) {
+  p('---');
+  p('');
+  p('# Part A0 — Page coverage: every role on every page');
+  p('');
+  p('From the deep crawl: each role opened each page of each tool; every in-page tab was');
+  p('inventoried, every dropdown opened and its options enumerated, every button classified');
+  p('and exercised by intent (safe → clicked; create/edit → form opened then cancelled;');
+  p('destructive / side-effect / submit → inventoried, never fired). Cell legend: **ok** page');
+  p('rendered for the role · **→ path** redirected (role lacks the capability — expected when');
+  p('the tab is hidden) · **restricted** in-place "Access restricted" · **HTTP n** failed.');
+  p('');
+  for (const cf of covFiles.sort()) {
+    let recs; try { recs = JSON.parse(fs.readFileSync(path.join(resultsDir, cf), 'utf8')); } catch { continue; }
+    if (!Array.isArray(recs) || !recs.length) continue;
+    const tool = cf.replace('-coverage.json', '');
+    const roles = [...new Set(recs.map((r) => r.role))];
+    const pages = [...new Set(recs.map((r) => r.path))];
+    const cell = (r) => {
+      if (!r) return '—';
+      if (r.httpStatus && r.httpStatus >= 400) return `HTTP ${r.httpStatus}`;
+      if (/access restricted/i.test(r.heading || '')) return 'restricted';
+      let landed = r.path; try { landed = new URL(r.url).pathname; } catch {}
+      const want = r.path;
+      if (r.redirected || !landed.endsWith(want)) return `→ ${landed.replace(/^\/(lms|hrms|todo|admin|sa)/, '')}`;
+      return 'ok';
+    };
+    p(`## ${TOOL_LABEL[tool] || tool} — ${pages.length} page(s) × ${roles.length} role(s)`);
+    p('');
+    p(`| Page | ${roles.map(esc).join(' | ')} |`);
+    p(`| --- | ${roles.map(() => '---').join(' | ')} |`);
+    for (const pg of pages) p(`| ${esc(pg)} | ${roles.map((ro) => esc(cell(recs.find((r) => r.role === ro && r.path === pg)))).join(' | ')} |`);
+    p('');
+    p('<details><summary>Per page × role: tabs, dropdowns and buttons exercised</summary>');
+    p('');
+    p('| Page | Role | Landed on | Tabs | Dropdowns | Buttons (safe clicked / forms opened / destructive · side-effect · submit inventoried / other) |');
+    p('| --- | --- | --- | --- | --- | --- |');
+    for (const r of recs) {
+      const b = r.buttons || {};
+      let landed = r.url; try { landed = new URL(r.url).pathname; } catch {}
+      p(`| ${esc(r.path)} | ${esc(r.role)} | ${esc(landed)} | ${(r.tabs || []).map((t) => esc(t.label)).join(', ') || '—'} | ${r.dropdownCount ?? 0} | ${b.safe ?? 0} / ${b.openForm ?? 0} / ${(b.destructive ?? 0) + (b.sideEffect ?? 0) + (b.submit ?? 0)} / ${b.other ?? 0} |`);
+    }
+    p('');
+    p('</details>');
+    p('');
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PART A — COVERAGE (what each role actually did, per tab)

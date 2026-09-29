@@ -21,6 +21,7 @@ export const TOOLS = {
       { id: 'login', label: 'Login', path: '/login', public: true },
       { id: 'select-branch', label: 'Select Branch', path: '/select-branch' },
       { id: 'change-password', label: 'Change Password', path: '/change-password' },
+      { id: 'no-access', label: 'No access', path: '/no-access' },
     ],
     writeTables: [],
   },
@@ -72,6 +73,20 @@ export const TOOLS = {
       { id: 'module-capabilities', label: 'Capabilities module', path: '/dashboard/m/capabilities' },
       { id: 'capability-matrix', label: 'Capability Matrix', path: '/dashboard/capabilities/matrix' },
       { id: 'users', label: 'Users', path: '/dashboard/users' },
+      // Added 2026-08/09 (8b15c3c meta leads fetch, 13e0237 campaign types,
+      // 1.44–1.51). Several carry IMMEDIATE-action buttons (Sync / Pull /
+      // Apply / Retry / Ignore / Re-run) — crawl.mjs classifies those as
+      // sideEffect and never clicks them; suites/admin/sa-console.mjs covers
+      // their authorization through the API instead.
+      { id: 'meta-ad-accounts', label: 'Meta ad accounts', path: '/dashboard/meta-ad-accounts' },
+      { id: 'meta-campaigns', label: 'Meta campaigns', path: '/dashboard/meta-campaigns' },
+      { id: 'meta-lead-inbox', label: 'Meta lead inbox', path: '/dashboard/meta-lead-inbox' },
+      { id: 'meta-mappings', label: 'Meta page/form mappings', path: '/dashboard/meta-mappings' },
+      { id: 'lead-pull', label: 'Lead pull', path: '/dashboard/lead-pull' },
+      { id: 'lead-assignment-rerun', label: 'Lead assignment re-run', path: '/dashboard/lead-assignment-rerun' },
+      { id: 'campaign-types', label: 'Campaign types', path: '/dashboard/campaign-types' },
+      { id: 'catalogs', label: 'Catalogs', path: '/dashboard/catalogs' },
+      { id: 'capi-events', label: 'CAPI events', path: '/dashboard/lookups/lead-stage/capi-events' },
       // [table] is dynamic; the crawler expands it from each module pane's card
       // list. One dynamicChildOf entry per module — driver.mjs's expandRoutes
       // only walks a single parent per entry, and the 22 lookup tables are now

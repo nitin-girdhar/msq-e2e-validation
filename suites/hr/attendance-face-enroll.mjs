@@ -60,6 +60,7 @@ function resetSubject() {
 
 let pass = 0;
 let fail = 0;
+let priorRule; // undefined = step 9 never ran; null = no branch rule existed
 function grade(label, ok, detail, sev = 'high', fix = '') {
   console.log(`  ${label.padEnd(34)} ${ok ? 'OK' : 'FAIL'}${ok ? '' : ` — ${detail}`}`);
   if (ok) { pass++; return; }
@@ -74,7 +75,10 @@ function grade(label, ok, detail, sev = 'high', fix = '') {
   });
 }
 
-const code = (b) => b?.error?.code || b?.code || (typeof b?.error === 'string' ? b.error : '') || '';
+// hr-service puts the machine code under details.code ({ success:false, error:'<message>',
+// details:{ code:'FACE_CONSENT_REQUIRED' } }); reading only error/code graded every
+// correct refusal as a failure.
+const code = (b) => b?.details?.code || b?.error?.code || b?.code || (typeof b?.error === 'string' ? b.error : '') || '';
 
 const a = await actor(ROLE);
 try {
@@ -153,6 +157,11 @@ try {
   // 9. Cooldown: simulate a recent enrolment + a 30-day org cooldown, then a
   //    self re-enroll must be refused with FACE_CHANGE_COOLDOWN (pre-CompreFace).
   {
+    // Snapshot the branch's rule row first — this is REAL attendance config
+    // (require_face_match): an earlier run left a 30-day / face-required rule on
+    // the branch because nothing put it back.
+    priorRule = q(`SELECT id, photo_change_cooldown_days, require_face_match::text FROM hr.attendance_rules
+      WHERE org_id=${lit(orgId)} AND NOT is_deleted LIMIT 1`)[0] ?? null;
     q(`INSERT INTO hr.attendance_rules (org_id, photo_change_cooldown_days, require_face_match)
          VALUES (${lit(orgId)}, 30, TRUE)
        ON CONFLICT (tenant_id, COALESCE(org_id, '00000000-0000-0000-0000-000000000000'::uuid)) WHERE NOT is_deleted
@@ -175,7 +184,14 @@ try {
   }
   if (priorEnroll && priorEnroll[0]) {
     q(`UPDATE hr.employee_profiles SET face_subject_id=${lit(priorEnroll[0])},
+         face_enrolled_at=${priorEnroll[1] ? lit(priorEnroll[1]) : 'NULL'},
          reference_photo_url=${priorEnroll[2] ? lit(priorEnroll[2]) : 'NULL'} WHERE user_id=${lit(userId)}`);
+  }
+  if (priorRule === null) {
+    q(`DELETE FROM hr.attendance_rules WHERE org_id=${lit(orgId)} AND NOT is_deleted`); // hard delete: db.q runs DELETE as root_service
+  } else if (priorRule) {
+    q(`UPDATE hr.attendance_rules SET photo_change_cooldown_days=${priorRule[1] === '' ? 'NULL' : Number(priorRule[1])},
+         require_face_match=${priorRule[2] === 't'} WHERE id=${lit(priorRule[0])}`);
   }
   await a.close();
 }

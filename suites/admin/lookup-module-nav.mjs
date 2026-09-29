@@ -19,7 +19,7 @@
 //      behavior GeoCascadeSelect used to hardcode, now generic.
 //
 //   node suites/admin/lookup-module-nav.mjs
-import { openState, visit, record, APPS } from '../../lib.mjs';
+import { openState, visit, record, APPS, absUrl } from '../../lib.mjs';
 
 const TOOL = 'admin';
 const APP = APPS['lookup-admin'];
@@ -34,7 +34,7 @@ const EXPECTED_MIN_CARDS = {
   lms: 7,
   hr: 3,
   tasks: 2,
-  capabilities: 4, // user-roles, lms-roles, hr-roles, task-roles (+ Capability Matrix)
+  capabilities: 3, // Capability Matrix + Departments + User Roles (lms/hr/task-roles removed in 5933410)
 };
 
 const { browser, page, log } = await openState(ROLE);
@@ -77,8 +77,8 @@ if (missingModules.length) {
 const allCardLinks = [];
 for (const href of moduleLinks) {
   const moduleKey = href.split('/').filter(Boolean).pop();
-  const v = await visit(page, APP + href);
-  const cardLinks = await page.locator('main a[href^="/dashboard/lookups/"], main a[href^="/dashboard/users"], main a[href^="/dashboard/capabilities/"]')
+  const v = await visit(page, absUrl(APP, href));
+  const cardLinks = await page.locator('main a[href*="/dashboard/lookups/"], main a[href*="/dashboard/users"], main a[href*="/dashboard/capabilities/"], main a[href*="/dashboard/meta-"], main a[href*="/dashboard/lead-"], main a[href*="/dashboard/campaign-types"], main a[href*="/dashboard/catalogs"]')
     .evaluateAll((els) => [...new Set(els.map((e) => e.getAttribute('href')))].filter(Boolean))
     .catch(() => []);
   const minExpected = EXPECTED_MIN_CARDS[moduleKey];
@@ -91,7 +91,7 @@ for (const href of moduleLinks) {
       scenario: `Open the '${moduleKey}' module pane and count its table/screen cards`,
       expected: `At least ${minExpected} card(s) (tablesByModule('${moduleKey}') plus any hand-built screen cards)`,
       actual: `Only ${cardLinks.length} card(s) rendered.`,
-      evidence: `${APP}${href} heading="${v.heading}"`,
+      evidence: `${absUrl(APP, href)} heading="${v.heading}"`,
       proposedSolution: `Check tablesByModule('${moduleKey}') and EXTRA_CARDS in app/dashboard/m/[module]/page.tsx.`,
     });
   }
@@ -101,7 +101,7 @@ for (const href of moduleLinks) {
 let broken = 0;
 for (const href of new Set(allCardLinks)) {
   if (!href.startsWith('/dashboard/lookups/')) continue; // Users/Capability Matrix covered by their own suites
-  const v = await visit(page, APP + href);
+  const v = await visit(page, absUrl(APP, href));
   const is404 = /404|could not be found/i.test(v.bodySnippet || '') || v.heading === '404';
   if (is404) {
     broken++;
@@ -110,7 +110,7 @@ for (const href of new Set(allCardLinks)) {
       scenario: 'Open a table card linked from a module pane',
       expected: 'The [table] route renders the table (config exists in TABLE_CONFIG)',
       actual: `404 — the card links to a slug with no matching TABLE_CONFIG entry.`,
-      evidence: `${APP}${href}`,
+      evidence: `${absUrl(APP, href)}`,
       proposedSolution: 'Confirm the slug in EXTRA_CARDS/tablesByModule matches a real TABLE_CONFIG key.',
     });
   }

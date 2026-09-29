@@ -6,7 +6,7 @@
 // crawler, and writes a per-tool coverage matrix to results/<tool>-coverage.json
 // so you can see, at a glance, which role reached which route with what result.
 import fs from 'node:fs';
-import { openState, ROLES, APPS, resultsDir, authFile } from './lib.mjs';
+import { openState, ROLES, APPS, resultsDir, authFile, absUrl, appPath } from './lib.mjs';
 import { TOOLS } from './tools.config.mjs';
 import { crawlRoute } from './crawl.mjs';
 import path from 'node:path';
@@ -29,7 +29,7 @@ async function expandRoutes(page, appUrl, tool) {
     ).catch(() => []);
     for (const href of hrefs.slice(0, 25)) {
       const id = href.split('/').filter(Boolean).pop();
-      routes.push({ id: `${r.id}:${id}`, label: `${r.label}/${id}`, path: href.replace(appUrl, '') });
+      routes.push({ id: `${r.id}:${id}`, label: `${r.label}/${id}`, path: appPath(absUrl(appUrl, href)) });
     }
   }
   return routes;

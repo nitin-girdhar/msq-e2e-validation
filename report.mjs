@@ -12,7 +12,22 @@ import { TOOLS } from './tools.config.mjs';
 
 const SEV_ORDER = ['critical', 'high', 'medium', 'low', 'info'];
 const sevRank = (s) => { const i = SEV_ORDER.indexOf(String(s || 'info').toLowerCase()); return i < 0 ? SEV_ORDER.length : i; };
-const TOOL_LABEL = { ...Object.fromEntries(Object.entries(TOOLS).map(([k, v]) => [k, v.label])), concurrency: 'Multi-user / Concurrency' };
+const TOOL_LABEL = {
+  ...Object.fromEntries(Object.entries(TOOLS).map(([k, v]) => [k, v.label])),
+  concurrency: 'Multi-user / Concurrency',
+  security: 'Security — API surface & public edge',
+  data: 'Data & configuration health (Postgres invariants)',
+  platform: 'Platform — push & notifications stream',
+  tenant: 'Cross-tenant isolation',
+  capability: 'Capability toggles',
+  visual: 'Visual / responsive',
+};
+
+// Stage ledger written by run-all.mjs — a suite that crashed or timed out has
+// no findings, which must never read as "clean".
+function loadLedger() {
+  try { return JSON.parse(fs.readFileSync(path.join(resultsDir, 'run-ledger.json'), 'utf8')); } catch { return null; }
+}
 
 function loadFindings() {
   if (!fs.existsSync(resultsDir)) return [];
@@ -44,6 +59,29 @@ lines.push('# MSQ Platforms — E2E Validation Summary');
 lines.push('');
 lines.push(`_Generated ${new Date().toISOString()} · ${findings.length} finding(s) across ${Object.keys(byTool).length} tool area(s)._`);
 lines.push('');
+const ledger = loadLedger();
+if (ledger?.stages?.length) {
+  const notClean = ledger.stages.filter((s) => s.status !== 'passed');
+  lines.push('## Run ledger');
+  lines.push('');
+  lines.push(`${ledger.stages.length} stage(s) since ${ledger.startedAt ?? '?'} — **${notClean.length} did not finish cleanly**. A crashed/timed-out suite reports nothing, so its area is UNTESTED, not clean.`);
+  lines.push('');
+  lines.push('| Stage | Status | Exit | Seconds |');
+  lines.push('| --- | --- | --- | --- |');
+  for (const s of ledger.stages) lines.push(`| ${esc(s.script)} | ${s.status === 'passed' ? 'passed' : `**${s.status}**`} | ${s.exitCode ?? s.signal ?? ''} | ${s.seconds ?? ''} |`);
+  lines.push('');
+}
+
+const urgent = findings.filter((f) => ['critical', 'high'].includes(String(f.severity).toLowerCase()));
+if (urgent.length) {
+  lines.push('## Triage — critical & high');
+  lines.push('');
+  lines.push('| # | Severity | Area | Finding | Role(s) |');
+  lines.push('| --- | --- | --- | --- | --- |');
+  urgent.forEach((f, i) => lines.push(`| ${i + 1} | ${String(f.severity).toUpperCase()} | ${esc(TOOL_LABEL[f.tool] || f.tool)} | ${esc(String(f.scenario || f.page).slice(0, 140))} | ${esc(String(f.role ?? '').slice(0, 60))} |`));
+  lines.push('');
+}
+
 lines.push('## Severity totals');
 lines.push('');
 lines.push('| Severity | Count |');

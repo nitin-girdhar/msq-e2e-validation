@@ -36,7 +36,7 @@ const HR = APPS['hr-web'];
 const GEO_URL = `${HR}/api/hr/geo-exceptions`;
 const CHECK_IN = `${HR}/api/hr/attendance/check-in`;
 const REQUESTER = 'sales_representative';
-const ADMIN = 'org_admin';
+const ADMIN = 'hr_admin'; // holds geo_exceptions.manage; Fitclass org_admin has no HR caps
 
 const CENTER = { lat: 28.4595, lng: 77.0266 };
 const OUTSIDE = { lat: 28.5300, lng: 77.1200 }; // ~11 km away, well outside default 200m

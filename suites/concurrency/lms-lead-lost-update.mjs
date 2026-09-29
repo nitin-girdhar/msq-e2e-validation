@@ -12,8 +12,9 @@
 //
 //   node suites/concurrency/lms-lead-lost-update.mjs
 import { APPS, record, roleMeta } from '../../lib.mjs';
-import { actor, apiPatch, apiGet, simultaneously } from '../../conc.mjs';
-import { dbReachable, one, lit } from '../../db.mjs';
+import { actor, apiPatch, apiGet, apiPost, simultaneously } from '../../conc.mjs';
+import { dbReachable, one, q, lit } from '../../db.mjs';
+import { purgeById } from '../../fixtures.mjs';
 
 const TOOL = 'concurrency';
 const LMS = APPS['lms-web'];
@@ -26,12 +27,16 @@ const org = roleMeta('org_admin').org;
 // NOTE: use last_name, not outcome_comment. outcome_comment only persists
 // alongside an outcome (the DB trigger NULLs it otherwise), so a race on that
 // field would be testing the outcome rules rather than concurrency.
-const row = one(`SELECT l.id, COALESCE(l.last_name,'')
-  FROM lms.marketing_leads l JOIN entity.organizations o ON o.id=l.org_id
-  WHERE o.name=${lit(org)} AND l.is_active AND NOT l.is_deleted
-  ORDER BY l.created_at DESC LIMIT 1`);
-if (!row) { console.log(`No editable lead found in ${org} — aborting`); process.exit(0); }
-const [leadId, original] = row;
+// A throwaway E2E lead (not a real one): created by tenant_admin, placed in
+// org_admin's branch with the tenant's default (sales) campaign type, so both
+// editors — org_admin and org_manager (home branch, see auth-setup) — see it.
+const seed = await actor('tenant_admin');
+const mk = await apiPost(seed, `${LMS}/api/leads`, { first_name: 'E2E-conc', last_name: `Base-${Date.now()}`, email: `e2e.conc.${Date.now()}@example.test` });
+await seed.close();
+const leadId = mk.body?.data?.id;
+if (!leadId) { console.log(`Could not create a fixture lead (${mk.status}) — aborting`); process.exit(0); }
+q(`UPDATE lms.marketing_leads SET org_id=(SELECT id FROM entity.organizations WHERE name=${lit(org)} LIMIT 1) WHERE id=${lit(leadId)}`);
+const original = one(`SELECT COALESCE(last_name,'') FROM lms.marketing_leads WHERE id=${lit(leadId)}`)[0];
 console.log(`Lead ${leadId} in ${org} — baseline last_name="${original}"`);
 
 const A = await actor('org_admin');
@@ -45,9 +50,12 @@ const valB = `E2E-B-${stamp}`;
 // two people editing the same record concurrently are in.
 const openedA = await apiGet(A, `${LMS}/api/leads/${leadId}`);
 const openedB = await apiGet(B, `${LMS}/api/leads/${leadId}`);
-const verA = openedA.body?.data?.updated_at;
-const verB = openedB.body?.data?.updated_at;
-if (!verA || !verB) { console.log('Could not read updated_at for both editors — aborting'); process.exit(0); }
+console.log(`editors opened the lead: org_admin GET ${openedA.status}, org_manager GET ${openedB.status}`);
+if (openedA.status !== 200 || openedB.status !== 200) { console.log('Both editors must be able to open the lead — aborting'); purgeById('lms.marketing_leads', leadId); process.exit(0); }
+// The detail DTO may omit updated_at; both editors opened the same row version.
+const dbVer = one(`SELECT updated_at FROM lms.marketing_leads WHERE id=${lit(leadId)}`)[0];
+const verA = openedA.body?.data?.updated_at ?? dbVer;
+const verB = openedB.body?.data?.updated_at ?? dbVer;
 const expectedA = new Date(verA).toISOString();
 const expectedB = new Date(verB).toISOString();
 console.log(`Both editors opened version ${expectedA} (identical: ${expectedA === expectedB})`);
@@ -84,6 +92,6 @@ if (bothAccepted && !conflictSignalled) {
 }
 
 // Cleanup — restore original value via the winning editor.
-await apiPatch(A, `${LMS}/api/leads/${leadId}`, { last_name: original }).catch(() => {});
+purgeById('lms.marketing_leads', leadId); // throwaway fixture (soft-delete is the floor for leads)
 await A.close(); await B.close();
 console.log('done.');

@@ -9,8 +9,12 @@
 //
 //   node preflight.mjs            # exits 1 if anything critical drifted
 //   node preflight.mjs --warn     # always exit 0, just report
-import { cfg, APPS } from './lib.mjs';
-import { dbReachable, q, scalar, lit } from './db.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { cfg, APPS, ORIGIN, GATEWAY, GATEWAY_DIRECT, COOKIE_DOMAIN, TOPOLOGY, dir } from './lib.mjs';
+import { dbReachable, q, scalar, lit, CONTAINER, DB } from './db.mjs';
+import { PLATFORM_ENV_FILE, hasLocalEnv } from './localenv.mjs';
 
 const warnOnly = process.argv.includes('--warn');
 const problems = [];
@@ -26,9 +30,42 @@ const check = (label, fn) => {
   }
 };
 
+// ── 0. This laptop: topology, Docker, DB container, cookie scope ──────────
+const authHost = new URL(APPS['auth-web']).hostname;
+const proxied = authHost !== 'localhost' && authHost !== '127.0.0.1';
+console.log(`topology: ${TOPOLOGY}${hasLocalEnv ? ` (${PLATFORM_ENV_FILE})` : ' — platform .env NOT found, using defaults'}`);
+for (const [app, u] of Object.entries(APPS)) console.log(`  ${app.padEnd(13)} ${u}`);
+console.log(`  gateway       ${GATEWAY}  (direct: ${GATEWAY_DIRECT})`);
+console.log(`  cookie domain ${COOKIE_DOMAIN ?? '(unset)'}   db: ${CONTAINER}/${DB}\n`);
+
+const docker = (args) => execFileSync('docker', args, { encoding: 'utf8', timeout: 20000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+try {
+  docker(['version', '--format', '{{.Server.Version}}']);
+  ok.push('docker daemon responding');
+} catch {
+  console.log('PREFLIGHT FAIL: Docker is not responding.');
+  console.log('  Rancher Desktop "timed out dialing Hyper-V socket": run "wsl --shutdown", relaunch Rancher Desktop, wait for green, retry.');
+  process.exit(warnOnly ? 0 : 1);
+}
+let dbState;
+try { dbState = docker(['inspect', '-f', '{{.State.Status}}', CONTAINER]); } catch { dbState = 'missing'; }
+if (dbState !== 'running') {
+  console.log(`PREFLIGHT FAIL: DB container '${CONTAINER}' is ${dbState}.`);
+  console.log('  From the platform root: "make dev-infra" (Postgres only, for native pnpm dev)');
+  console.log('  or "docker compose --profile sso-proxy up -d" (the whole stack incl. the app.localhost proxy).');
+  process.exit(warnOnly ? 0 : 1);
+}
+// identity-service sets the session cookie for COOKIE_DOMAIN. If that does not
+// cover the host the apps are browsed on, the browser DROPS the cookie: every
+// login "succeeds" and bounces back to /login, and every suite reads 401.
+const cd = COOKIE_DOMAIN ? COOKIE_DOMAIN.replace(/^\./, '') : null;
+if (cd && authHost !== cd && !authHost.endsWith(`.${cd}`)) {
+  problems.push(`COOKIE_DOMAIN=${COOKIE_DOMAIN} does not cover the app host '${authHost}' — every login will silently fail. In ${PLATFORM_ENV_FILE}: native pnpm dev needs COOKIE_DOMAIN=localhost with the localhost:300x *_URL values; docker needs COOKIE_DOMAIN=app.localhost with the app.localhost URLs. Restart identity-service after changing it.`);
+} else ok.push(`cookie domain covers ${authHost}`);
+
 // ── 1. Database reachable ──────────────────────────────────────────────────
 if (!dbReachable()) {
-  console.log('PREFLIGHT FAIL: database not reachable (container msq-db-server / db platforms).');
+  console.log(`PREFLIGHT FAIL: container '${CONTAINER}' is running but psql cannot open database '${DB}'.`);
   process.exit(warnOnly ? 0 : 1);
 }
 ok.push('database reachable');
@@ -48,6 +85,21 @@ const REQUIRED = {
   'iam.users': ['id', 'email', 'role_id', 'org_id', 'is_active'],
   'iam.user_roles': ['id', 'name', 'rank'],
   'entity.organizations': ['id', 'name'],
+  // Added with the 2026-09 coverage pass (campaign types, transfer, weights,
+  // HR sync, entitlement, push, Meta inbox).
+  'marketing.campaign_types': ['id', 'tenant_id', 'name', 'is_default', 'is_deleted'],
+  'marketing.campaign_type_rules': ['id', 'tenant_id', 'rule_order', 'pattern', 'campaign_type_id', 'is_deleted'],
+  'lms.lead_links': ['source_lead_id', 'dest_lead_id', 'link_type'],
+  'lms.lead_assignment_weights': ['user_org_mapping_id', 'campaign_type_id', 'weight'],
+  'lms.lead_follow_ups': ['id', 'lead_id'],
+  'lms.lead_stage': ['id', 'name', 'tenant_id'],
+  'iam.user_org_mapping': ['id', 'user_id', 'org_id', 'is_active'],
+  'iam.departments': ['id', 'name'],
+  'hr.employee_profiles': ['user_id', 'org_id', 'is_active', 'is_deleted'],
+  'hr.designations': ['id', 'name'],
+  'entity.tenant_modules': ['tenant_id', 'module', 'is_active'],
+  'notify.push_subscriptions': ['endpoint', 'user_id'],
+  'ext.meta_lead_inbox': ['status', 'created_at', 'attempts', 'error_text'],
 };
 
 for (const [table, cols] of Object.entries(REQUIRED)) {
@@ -107,10 +159,13 @@ check('the two configured tenants are distinct', () => {
 });
 
 // ── 4. Web apps + the API routes the suites drive ──────────────────────────
+// APPS already carries each app's basePath on the single origin
+// (http://app.localhost/lms ...), so these probe the real prefixed routes.
 const ROUTES = [
   ['lms-web', '/dashboard/leads'],
   ['hr-web', '/attendance'],
   ['todo-web', '/tasks'],
+  ['admin-web', '/dashboard'],
   ['lookup-admin', '/dashboard'],
   ['auth-web', '/login'],
 ];
@@ -129,6 +184,25 @@ for (const [app, p] of ROUTES) {
   if (status === 0) problems.push(`app ${app} (${APPS[app]}${p}) — not responding; is the dev stack running?`);
   else ok.push(`app ${app} ${p} -> ${status}`);
 }
+
+// ── 5. Single origin, /api rewrite, gateway, harness inputs ──────────────────
+// Every authenticated call goes to ${ORIGIN}/api/* (auth-web rewrite -> gateway)
+// so the host-only session cookie is sent. If that hop is broken, every suite
+// reads 401/404 and would report it as product defects.
+const me = await reachable(`${GATEWAY}/auth/me`);
+if (me === 0) {
+  problems.push(proxied
+    ? `${ORIGIN} not reachable — the single-origin proxy is opt-in: start the stack with "docker compose --profile sso-proxy up -d" from the platform root. Running native "make dev" instead? Point the platform .env at the localhost:300x URLs with COOKIE_DOMAIN=localhost (or run with E2E_MODE=ports after doing so).`
+    : `${ORIGIN} not reachable — is auth-web running ("make dev" / "pnpm turbo dev")?`);
+}
+else if (me !== 401) problems.push(`${GATEWAY}/auth/me answered ${me} without a session (expected 401) — the auth-web /api rewrite to the gateway is not in place`);
+else ok.push(`${GATEWAY}/auth/me -> 401 (rewrite to gateway works)`);
+const health = await reachable(`${GATEWAY_DIRECT}/health`);
+if (health !== 200) problems.push(`gateway ${GATEWAY_DIRECT}/health -> ${health} (public-edge and the anonymous sweep call the gateway directly; set E2E_GATEWAY_DIRECT)`);
+else ok.push('gateway direct /health -> 200');
+const gwSrc = process.env.E2E_GATEWAY_SRC || path.resolve(dir, '../msq-core/services/api-gateway/src/server.ts');
+if (!fs.existsSync(gwSrc)) problems.push(`gateway source not found at ${gwSrc} — api-surface-sweep parses it for the route list (set E2E_GATEWAY_SRC)`);
+else ok.push('gateway source present for the route sweep');
 
 // ── report ─────────────────────────────────────────────────────────────────
 console.log(`PREFLIGHT — ${ok.length} ok, ${problems.length} problem(s)\n`);

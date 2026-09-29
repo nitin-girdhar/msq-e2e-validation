@@ -41,12 +41,23 @@ async function login({ stateKey, email }) {
   let landedOn = '';
   let branchPicker = false;
   try {
-    await page.goto(`${cfg.apps['auth-web']}/login`, { waitUntil: 'domcontentloaded' });
-    await waitForHydration(page);
+    // The gateway allows 10 logins/min per IP and this loop logs in ~20
+    // accounts from one IP. A 429 leaves the form on /login and used to be
+    // reported as 'stuck-on-login'; wait out Retry-After and resubmit instead.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await page.goto(`${cfg.apps['auth-web']}/login`, { waitUntil: 'domcontentloaded' });
+      await waitForHydration(page);
 
-    await page.locator('#email').fill(email);
-    await page.locator('#password').fill(cfg.password);
-    await page.locator('button[type="submit"]').click();
+      await page.locator('#email').fill(email);
+      await page.locator('#password').fill(cfg.password);
+      const loginResp = page.waitForResponse((r) => /\/api\/auth\/login$/.test(new URL(r.url()).pathname), { timeout: 20000 }).catch(() => null);
+      await page.locator('button[type="submit"]').click();
+      const r = await loginResp;
+      if (!r || r.status() !== 429) break;
+      const waitS = Math.min(Math.max(Number(r.headers()['retry-after']) || 15, 2), 65);
+      console.log(`   ${stateKey}: login rate-limited (429), waiting ${waitS}s`);
+      await page.waitForTimeout(waitS * 1000 + 250);
+    }
 
     await page.waitForURL((u) => !/\/login$/.test(u.pathname), { timeout: 25000 }).catch(() => {});
     await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
@@ -59,7 +70,13 @@ async function login({ stateKey, email }) {
       // matched nothing, the click silently no-op'd, and the user was left
       // stranded on /select-branch with an incomplete session (breaks every
       // subsequent API call with 401 "Invalid token").
-      const option = page.locator('button, [role="option"], li').first();
+      // The HOME branch ("· Default", SelectBranchList is_home), not the first
+      // option: the list is alphabetical, so a multi-branch user (org_manager is
+      // mapped to 4) landed on a non-home branch, where hr-web correctly moves
+      // them off /leave (apply is home-branch only) — which the suites then read
+      // as "Apply leave hidden from a permitted user".
+      const home = page.locator('button, [role="option"], li').filter({ hasText: /· Default/ }).first();
+      const option = (await home.count()) ? home : page.locator('button, [role="option"], li').first();
       await option.click({ timeout: 10000 }).catch(() => {});
       // networkidle alone is flaky under load (many browsers/dev-servers
       // contending for CPU): the org-switch fetch + client-side navigation

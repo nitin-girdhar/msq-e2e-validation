@@ -11,9 +11,11 @@
 //
 //   node suites/hr/hr-admin-matrix.mjs
 import { APPS, roleMeta, SECONDARY } from '../../lib.mjs';
+import { leaveTypeFor } from '../../fixtures.mjs';
 import { apiPost, apiGet, apiPut } from '../../conc.mjs';
 import { runRoleMatrix } from '../../matrix.mjs';
 import { dbReachable, scalar, q, lit } from '../../db.mjs';
+const LEAVE_TYPE = leaveTypeFor(roleMeta('sales_representative').email);
 
 const TOOL = 'hr';
 const HR = APPS['hr-web'];
@@ -83,7 +85,7 @@ if (targetUser) {
     tool: TOOL, action: "credit another employee's leave balance",
     endpoint: 'POST /api/hr/leave/adjustments', area: 'Leave Admin', tab: 'Adjustment', minRank: HR_ADMIN_RANK, severityOver: 'high',
     act: (a, role) => apiPost(a, `${HR}/api/hr/leave/adjustments`, {
-      user_id: targetUser, leave_type_name: 'casual', amount: 1, note: `E2E matrix ${role} ${stamp}`,
+      user_id: targetUser, leave_type_name: LEAVE_TYPE, amount: 1, note: `E2E matrix ${role} ${stamp}`,
     }),
   });
 }
@@ -119,7 +121,7 @@ if (anyShift && targetUser) {
 console.log('\n— attendance team report (manager rank 60+) —');
 await runRoleMatrix({
   tool: TOOL, action: "read the team attendance report (other employees' data)",
-  endpoint: 'GET /api/hr/attendance/team', area: 'Attendance', tab: 'Team', minRank: 60, severityOver: 'high',
+  endpoint: 'GET /api/hr/attendance/team', area: 'Attendance', tab: 'Team', capability: 'hr.attendance.view.team', severityOver: 'high',
   act: (a) => apiGet(a, `${HR}/api/hr/attendance/team?date=${new Date().toISOString().slice(0, 10)}`),
 });
 

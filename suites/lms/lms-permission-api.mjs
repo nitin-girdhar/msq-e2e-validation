@@ -3,14 +3,14 @@
 // already-authenticated storage state (cookies). This checks whether the
 // backend actually enforces "read only" / "sales rep can't reassign" or
 // whether it's only a UI-level restriction.
-import { openAs, record } from '../../lib.mjs';
+import { openAs, record, APPS } from '../../lib.mjs';
 
 async function testRole(role) {
   const { browser, page } = await openAs(role);
   const out = { role };
   try {
     // 1. List leads to get a real lead id + stage options.
-    const listRes = await page.request.get('http://localhost:3001/api/leads?page_size=5');
+    const listRes = await page.request.get(`${APPS['lms-web']}/api/leads?page_size=5`);
     out.listStatus = listRes.status();
     const listJson = await listRes.json().catch(() => null);
     const lead = listJson?.data?.[0];
@@ -36,7 +36,7 @@ async function testRole(role) {
     }
 
     // 2. Attempt PATCH as this role directly against the API.
-    const patchRes = await page.request.patch(`http://localhost:3001/api/leads/${lead.lead_id}`, {
+    const patchRes = await page.request.patch(`${APPS['lms-web']}/api/leads/${lead.lead_id}`, {
       data: { stage_id: altStage.id, transition_note: `E2E-perm-test-${role}-${Date.now()}` },
       failOnStatusCode: false,
     });
@@ -44,7 +44,7 @@ async function testRole(role) {
     out.patchBody = await patchRes.text().catch(() => '');
 
     // 3. Re-fetch the lead to see if the stage actually changed.
-    const getRes = await page.request.get(`http://localhost:3001/api/leads/${lead.lead_id}`, { failOnStatusCode: false });
+    const getRes = await page.request.get(`${APPS['lms-web']}/api/leads/${lead.lead_id}`, { failOnStatusCode: false });
     out.getStatus = getRes.status();
     const getJson = await getRes.json().catch(() => null);
     out.stageAfterPatch = getJson?.data?.stage ?? null;
