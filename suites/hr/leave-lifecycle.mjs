@@ -15,7 +15,7 @@
 // row it created so the dev balance is left exactly as found.
 //
 //   node suites/hr/leave-lifecycle.mjs
-import { APPS, record, roleMeta } from '../../lib.mjs';
+import { APPS, record, roleMeta, HR_EMPLOYEE } from '../../lib.mjs';
 import { leaveTypeFor, seedLeaveBalance } from '../../fixtures.mjs';
 import { actor, apiPost } from '../../conc.mjs';
 import { dbReachable, scalar, q, lit } from '../../db.mjs';
@@ -25,9 +25,9 @@ const HR = APPS['hr-web'];
 if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit(0); }
 
 const stamp = Date.now();
-const LEAVE_TYPE = leaveTypeFor(roleMeta('sales_representative').email);
-const repId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative').email)} LIMIT 1`);
-const orgId = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(roleMeta('sales_representative').org)} LIMIT 1`);
+const LEAVE_TYPE = leaveTypeFor(roleMeta(HR_EMPLOYEE).email);
+const repId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta(HR_EMPLOYEE).email)} LIMIT 1`);
+const orgId = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(roleMeta(HR_EMPLOYEE).org)} LIMIT 1`);
 const tenantId = scalar(`SELECT tenant_id FROM entity.organizations WHERE id=${lit(orgId)}`);
 const typeId = scalar(`SELECT id FROM hr.leave_types WHERE name=${lit(LEAVE_TYPE)} AND tenant_id=${lit(tenantId)}::uuid LIMIT 1`);
 if (!repId || !orgId || !typeId) { console.log('Could not resolve rep1/org/leave_type — aborting'); process.exit(0); }
@@ -55,11 +55,11 @@ function purge(id) {
 }
 const idFrom = (body) => body?.data?.id ?? body?.id ?? body?.data?.request?.id ?? null;
 const fail = (severity, scenario, expected, actual, evidence, fix) => record(TOOL, {
-  severity, role: 'sales_representative', tool: TOOL, page: 'Leave lifecycle', scenario, expected, actual,
+  severity, role: HR_EMPLOYEE, tool: TOOL, page: 'Leave lifecycle', scenario, expected, actual,
   evidence: String(evidence).slice(0, 400), proposedSolution: fix,
 });
 
-const rep = await actor('sales_representative');
+const rep = await actor(HR_EMPLOYEE);
 const admin = await actor('hr_admin'); // holds hr.leave.approve; Fitclass org_admin has no HR caps
 try {
   // ── Seed a casual balance so apply is never blocked by insufficient balance ──
@@ -68,7 +68,7 @@ try {
   });
   console.log(`seed ${LEAVE_TYPE} +5 for rep1 -> http=${seed.status}`);
   // The adjustment endpoint is capability-gated per tenant; the balance is only a precondition here.
-  if (seed.status >= 300) console.log(`  fallback DB seed: ${seedLeaveBalance(roleMeta('sales_representative').email, LEAVE_TYPE, 5, `E2E-lifecycle-seed-${stamp}`)} row`);
+  if (seed.status >= 300) console.log(`  fallback DB seed: ${seedLeaveBalance(roleMeta(HR_EMPLOYEE).email, LEAVE_TYPE, 5, `E2E-lifecycle-seed-${stamp}`)} row`);
 
   // ── 1. APPLY ────────────────────────────────────────────────────────────────
   const apply = await apiPost(rep, `${HR}/api/hr/leave/requests`, {

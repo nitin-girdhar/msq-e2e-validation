@@ -10,12 +10,12 @@
 // 75 succeeding on these is a privilege escalation.
 //
 //   node suites/hr/hr-admin-matrix.mjs
-import { APPS, roleMeta, SECONDARY } from '../../lib.mjs';
+import { APPS, roleMeta, SECONDARY, HR_EMPLOYEE } from '../../lib.mjs';
 import { leaveTypeFor } from '../../fixtures.mjs';
 import { apiPost, apiGet, apiPut } from '../../conc.mjs';
 import { runRoleMatrix } from '../../matrix.mjs';
 import { dbReachable, scalar, q, lit } from '../../db.mjs';
-const LEAVE_TYPE = leaveTypeFor(roleMeta('sales_representative').email);
+const LEAVE_TYPE = leaveTypeFor(roleMeta(HR_EMPLOYEE).email);
 
 const TOOL = 'hr';
 const HR = APPS['hr-web'];

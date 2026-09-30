@@ -18,7 +18,7 @@
 // rejects (canOverrideAttendanceApproval). Self-cleaning.
 //
 //   node suites/hr/regularization-lifecycle.mjs
-import { APPS, record, roleMeta } from '../../lib.mjs';
+import { APPS, record, roleMeta, HR_EMPLOYEE } from '../../lib.mjs';
 import { actor, apiPost } from '../../conc.mjs';
 import { dbReachable, scalar, q, lit } from '../../db.mjs';
 
@@ -34,9 +34,9 @@ const stamp = Date.now();
 // Approval). Case 4 uses org_admin self-submitting to prove the approver!=requester
 // business guard specifically (it holds the approve capability, so a denial there
 // is the guard, not the capability gate).
-const REQUESTER = 'sales_representative';
+const REQUESTER = HR_EMPLOYEE;
 const APPROVER = 'org_admin';
-const reqId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative').email)} LIMIT 1`);
+const reqId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta(HR_EMPLOYEE).email)} LIMIT 1`);
 const adminId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('org_admin').email)} LIMIT 1`);
 if (!reqId || !adminId) { console.log('Could not resolve rep1 / org_admin — aborting'); process.exit(0); }
 

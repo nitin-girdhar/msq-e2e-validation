@@ -184,9 +184,22 @@ function run(stage) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [full], { stdio: 'inherit', cwd: dir, windowsHide: true, detached: process.platform !== 'win32' });
     let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; killTree(child.pid); }, limit);
+    let done = false;
+    let grace = null;
+    // After the kill, do NOT wait for 'exit' indefinitely: a grandchild wedged
+    // on a hung `docker exec` (Rancher's Hyper-V socket hang) keeps the
+    // inherited stdio open, 'exit' never fires, and the stage ran 537 min past
+    // a 60 min limit on 2026-09-29. Give it 60 s, then move on regardless.
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killTree(child.pid);
+      grace = setTimeout(() => finish(null, 'SIGKILL-unconfirmed'), 60 * 1000);
+    }, limit);
     const finish = (code, signal) => {
+      if (done) return;
+      done = true;
       clearTimeout(timer);
+      if (grace) clearTimeout(grace);
       const seconds = Math.round((Date.now() - t0) / 1000);
       const status = timedOut ? 'timeout' : code === 0 ? 'passed' : 'crashed';
       ledger.push({ tag: stage.tag, script: stage.script, startedAt, status, exitCode: code, signal, seconds });

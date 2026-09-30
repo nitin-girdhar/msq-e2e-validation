@@ -19,13 +19,13 @@
 //               self, within cooldown              → 422 FACE_CHANGE_COOLDOWN
 //
 //   node suites/hr/attendance-face-enroll.mjs
-import { APPS, record, roleMeta } from '../../lib.mjs';
+import { APPS, record, roleMeta, HR_EMPLOYEE } from '../../lib.mjs';
 import { actor, apiGet, apiPost } from '../../conc.mjs';
 import { dbReachable, scalar, q, lit } from '../../db.mjs';
 
 const TOOL = 'hr';
 const HR = APPS['hr-web'];
-const ROLE = 'sales_representative'; // rep1 — a normal employee in FitClass - Gurgaon
+const ROLE = HR_EMPLOYEE; // rep1 — a normal employee in FitClass - Gurgaon
 const PHOTO_URL = `${HR}/api/users/me/photo`;
 const FACE_ME = `${HR}/api/hr/attendance/face/me`;
 const ENROLL = `${HR}/api/hr/attendance/face/enroll`;
@@ -37,7 +37,7 @@ const JPEG =
 
 if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit(0); }
 
-const userId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative').email)} LIMIT 1`);
+const userId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta(HR_EMPLOYEE).email)} LIMIT 1`);
 if (!userId) { console.log('Could not resolve rep1 — aborting'); process.exit(0); }
 const orgId = scalar(`SELECT org_id FROM iam.users WHERE id=${lit(userId)}`);
 if (!orgId) { console.log('Could not resolve rep1 org — aborting'); process.exit(0); }

@@ -1,5 +1,65 @@
 ---
 
+# Cycle 5 re-validation (2026-09-30)
+
+**What ran:**
+- **Data:** a **fresh production copy**, restored 2026-09-29 and migrated 1.48.0 → 1.55.1 per `msq-deploy/DB_ROLLOUT_1.48.0_to_1.55.1.md`.
+- **Code:** current images, including the 1.55.0 super-admin tenant switch.
+- **Suites:** the full `run-all` pass, 60 stages.
+  - The 3 crawls that hung on Docker's Hyper-V stalls overnight were re-run on their own and pass.
+  - 14 suites whose actor or expectation was outdated were fixed and re-run in place with `rerun.mjs`.
+- **Totals after re-verification:** 1 critical (data only), 26 high, 183 medium, 482 low.
+
+## Status of every cycle-4 issue
+
+| # | Issue | Cycle-5 status | Evidence |
+|---|---|---|---|
+| 1 | Denied switch-org filed in the other tenant's audit trail | ✅ **Fixed** (1.54.0 / 1.55.1) | switch-org suite: 0 cross-tenant rows; tenant B feed has 0 foreign performers |
+| 3 | `/activities` 500 + no tenant predicate | ✅ **Fixed** (1.54.0) | API sweep: no 5xx on `/activities`; each feed holds only its own tenant's users |
+| 2 | Lead transfer: 500s, branch pin, race | ❌ **Open** | 6 highs (re-transfer / missing id / other-tenant / other-branch → 500; tenant_admin cross-branch 500); transfer race loser 5xx 5/5 |
+| 4 | Regularizations created without approvers | ❌ **Open** | fitness_trainer's own regularization: `chain=[]` |
+| 4b | Resolved approver lacks `hr.leave.approve` | ⚠️ **Latent, not re-exercised** | This cycle's employee (fitness_trainer) reports to a fitness_manager who *does* hold approve. The defect is untouched in code, and reps' manager (senior_sales_executive) still lacks it. |
+| 4c | HR admin actions pinned to the session branch; recompute no-op | ❌ **Open** | hr_admin approve/reject → 404, geo-exception → 400 "User not found in this org", recompute 2xx with no row, split-shift punches read → 0 events |
+| 5 | Department create/update 500 | ❌ **Open, wider** | Now **super_admin too** (500): since 1.55.0 super_admin runs as the `tenant_admin` PG role, which lacks the INSERT/UPDATE grant and write policy |
+| 6 | Malformed `:id` → 500 | ❌ **Open** | `GET /hr/attendance/regularizations/not-a-uuid` → 500 |
+| 7 | Leads grid shows Edit to read_only | ❌ **Open** | read_only Edit → Save → 403 |
+| 8 | Apply leave shown to read_only | ❌ **Open** | read_only sees Apply leave |
+| 9 | Follow-up date required without `lms.followups.create` | ❌ **Open, wider** | Now also **Fitclass tenant_admin** (its follow-up grants were removed in prod); MSquare tenant_admin still 403 |
+| 10 | New-user modal pre-fills an inactive branch | ⚠️ **Latent** | Not reproduced because "Fitclass - Head Office" was re-activated in prod; the code is unchanged, so it returns as soon as any admin's home branch is deactivated |
+| 11 | Token revoked at birth after a password reset | ⚠️ **Not reproduced** | Timing-dependent (same-second reset + login); code unchanged |
+| 12 | super_admin cross-tenant grid / 404 | ✅ **Superseded** by the 1.55.0 tenant switch (super_admin is fenced to the session tenant; the branch picker lists every tenant **by design**) | data IAM-2 (root's stray cross-tenant mapping) is still critical in data-health: remove it |
+| 13 | Lead FK trigger ignores `campaign_type_id` | ❌ **Open** | No code change (not exercised by a suite) |
+| 14 | Tablet overflow | ❌ **Open** | 48 overflow findings |
+| 15 | Gateway drops ETag | ❌ **Open** | photo GET: `etag=undefined` |
+| 16 | React #418 hydration (`toLocaleString`) | ❌ **Open** | api-tokens (super_admin, tenant_admin, **hr_admin**), SA HRMS pane, SA leave-request-statuses |
+| 17 | `/tenants/:id/modules` edge guard | ❌ **Open** | tenant_admin / org_admin PUT → 422 (past the edge) |
+| 18 | `200 []` for a foreign lead's sub-resources | ❌ **Open** (low) | 5 findings, no data leaked |
+
+## New in cycle 5
+
+| Sev | Finding | Detail |
+|---|---|---|
+| **Confirm** | **Fitclass `hr_admin` re-ranked 75 → 980** (org_admin level) in prod, and `hr-admin@fitclass.in` is mapped into all 28 Fitclass branches | At 980 it passes every `rank ≥ ORG_ADMIN` gate. The UI round trip shows **hr_admin creating a user (201)**. MSquare and the platform default keep 75. If unintended, restore 75 in the Capability/User Roles screen. |
+| Low | Leave approval race: two simultaneous approvals by the same approver both return **200** | Only **one** approval row is written and the request advances once (no double approval), but the losing tab should get 409 "already decided" instead of a silent success. `leave.repository.ts approveLeave`: return `ConflictError` when the level is no longer pending. |
+
+## Production config changes discovered by this cycle (not defects)
+- Fitclass `sales_representative` now holds **0 HR capabilities** (it had 13). Reps can no longer check in, enroll a face or apply for leave. The harness now uses `fitness_trainer` as the HR employee (`roles.json hrEmployee`).
+- Fitclass `tenant_admin` lost `lms.followups.*`, which is what makes it hit #9.
+- The Fitclass HR admin account is now `hr-admin@fitclass.in`; `hr-head@fitclass.in` is gone.
+- "Fitclass - Head Office" is active again.
+
+## Harness changes this cycle
+- **Actors and expectations:**
+  - HR suites act as `HR_EMPLOYEE` / `HR_APPROVER` from `roles.json` (capability-picked), so the leave approval race is now actually exercised.
+  - switch-org accepts super_admin's cross-tenant picker (1.55.0 design).
+  - capability-matrix-ui switches a **fresh** super_admin session into the target tenant, because the SA console follows the session since the tenant cookie was retired.
+- **`run-all.mjs` hung-stage handling:** a timed-out stage is abandoned 60 s after its tree is killed. A hung `docker exec` had kept one stage alive 537 min past its limit.
+- **Still to fix in the harness:**
+  - `hr-admin-matrix` request bodies are outdated (holidays / leave settings / adjustments answer 422/400 to every role);
+  - the leave-overlap step must check that its base request succeeded (it graded a 201 as a defect when the base had failed).
+
+---
+
 # Verified issues — cycle 4 (2026-09-29)
 
 **Scope of this cycle:** the local stack with every current change applied, including the

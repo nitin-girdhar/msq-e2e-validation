@@ -30,13 +30,13 @@
 // 60s rules-cache flip) is required.
 //
 //   node suites/hr/attendance-geofence-guard.mjs
-import { APPS, record, roleMeta, openState } from '../../lib.mjs';
+import { APPS, record, roleMeta, openState, HR_EMPLOYEE } from '../../lib.mjs';
 import { actor, apiPost } from '../../conc.mjs';
 import { dbReachable, scalar, q, lit } from '../../db.mjs';
 
 const TOOL = 'hr';
 const HR = APPS['hr-web'];
-const ROLE = 'sales_representative'; // rep1 — a normal employee in FitClass - Gurgaon
+const ROLE = HR_EMPLOYEE; // rep1 — a normal employee in FitClass - Gurgaon
 const CHECK_IN = `${HR}/api/hr/attendance/check-in`;
 
 // Org geofence centre for the run, and two probe points.
@@ -51,7 +51,7 @@ if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit
 
 const orgName = roleMeta(ROLE)?.org;
 const orgId = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(orgName)} LIMIT 1`);
-const userId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative').email)} LIMIT 1`);
+const userId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta(HR_EMPLOYEE).email)} LIMIT 1`);
 if (!orgId || !userId) { console.log(`Could not resolve org (${orgName}) / rep1 user — aborting`); process.exit(0); }
 
 // Today's work date in the org timezone (matches the service's localDateOf).

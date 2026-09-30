@@ -39,12 +39,14 @@
     },
     {
       "role": "hr_admin",
-      "email": "hr-head@fitclass.in",
-      "rank": 75,
+      "email": "hr-admin@fitclass.in",
+      "_rankNote": "2026-09-29 prod refresh: Fitclass re-ranked its hr_admin role 75 -> 980 (org_admin level) and mapped this user into all 28 Fitclass branches; flagged in openissues as a privilege widening to confirm.",
+      "rank": 980,
       "scope": "dept",
       "dept": "hr",
       "org": "Gurugram - Sector 69",
-      "actsAs": "hr_admin"
+      "actsAs": "hr_admin",
+      "_note": "2026-09-29 prod refresh: hr-head@fitclass.in no longer exists; the Fitclass hr_admin is now hr-admin@fitclass.in (homed in the inactive Fitclass - Head Office)."
     },
     {
       "role": "fitness_manager",
@@ -168,5 +170,8 @@
       "tenant": "MSquare Professionals",
       "org": "Gurugram - Civil Lines"
     }
-  ]
+  ],
+  "_hrActors": "2026-09-30: Fitclass sales_representative holds 0 HR capabilities after the prod refresh (had 13), so HR self-service suites act as hrEmployee (holds hr.leave.request.create + attendance check-in, Sector 69 where the active leave policy is) and hrApprover (hrEmployee's reporting-line manager, holds hr.leave.approve).",
+  "hrEmployee": "fitness_trainer",
+  "hrApprover": "fitness_manager"
 }

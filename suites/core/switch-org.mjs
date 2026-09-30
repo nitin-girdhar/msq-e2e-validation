@@ -81,7 +81,10 @@ for (const role of ROLES) {
     const foreign = [...listed].filter((id) => scalar(`SELECT tenant_id FROM entity.organizations WHERE id=${lit(id)}`) !== u.tenant);
     console.log(`${role.padEnd(26)} my-orgs http=${mo.status} listed=${listed.size} expected=${expected.size} extra=${extra.length} missing=${missing.length} foreign=${foreign.length} can_view_all=${canAll}`);
     logAction({ tool: TOOL, role, area: 'Branch switcher', action: 'list my branches', method: 'GET', endpoint: '/auth/my-orgs', status: mo.status, outcome: outcomeOf(mo.status) });
-    if (foreign.length) fail('critical', role, 'The branch picker lists a branch from ANOTHER tenant', `Only tenant ${u.tenant} branches`, `${foreign.length} foreign org(s): ${foreign.join(', ')}`, `user=${meta.email}`, 'getUserOrgs joins iam.user_org_mapping without asserting o.tenant_id = the user\'s tenant; add that predicate and delete the stray mapping rows (see data-health).');
+    // 1.55.0: a platform super_admin is offered every active branch of every
+    // active tenant BY DESIGN (the navbar tenant switch, fenced per session).
+    // For every other role a foreign branch is still a cross-tenant leak.
+    if (foreign.length && role !== 'super_admin') fail('critical', role, 'The branch picker lists a branch from ANOTHER tenant', `Only tenant ${u.tenant} branches`, `${foreign.length} foreign org(s): ${foreign.join(', ')}`, `user=${meta.email}`, 'getUserOrgs joins iam.user_org_mapping without asserting o.tenant_id = the user\'s tenant; add that predicate and delete the stray mapping rows (see data-health).');
     if (extra.length || missing.length) fail('medium', role, 'Branch picker disagrees with the branches the data layer covers', 'my-orgs == getCoveredOrgIds (active mappings + home, or the whole tenant for tenant-wide roles)', `extra=[${extra.join(', ')}] missing=[${missing.join(', ')}]`, `user=${meta.email}`, 'Keep auth.service getMyOrgs and users.repository getCoveredOrgIds on one rule — the comment in getCoveredOrgIds says exactly this class of drift is the bug.');
     if (canAll !== undefined && canAll !== tenantWide) fail(canAll ? 'high' : 'medium', role, `can_view_all=${canAll} for ${role}`, `can_view_all=${tenantWide} (tenant-wide roles only)`, `can_view_all=${canAll}`, `user=${meta.email}`, 'canViewAllBranches must equal isTenantWideRole(platform_role).');
 

@@ -9,19 +9,19 @@
 // prove what happens when two of them act simultaneously.
 //
 //   node suites/concurrency/hr-leave-approval-race.mjs
-import { APPS, record, cfg, roleMeta } from '../../lib.mjs';
+import { APPS, record, cfg, roleMeta, HR_EMPLOYEE, HR_APPROVER } from '../../lib.mjs';
 import { leaveTypeFor, seedLeaveBalance } from '../../fixtures.mjs';
 import { actor, apiPost, apiGet, simultaneously } from '../../conc.mjs';
 import { dbReachable, one, scalar, lit } from '../../db.mjs';
-const LEAVE_TYPE = leaveTypeFor(roleMeta('sales_representative').email);
+const LEAVE_TYPE = leaveTypeFor(roleMeta(HR_EMPLOYEE).email);
 
 const TOOL = 'concurrency';
 const HR = APPS['hr-web'];
-const REQUESTER = 'sales_representative';
+const REQUESTER = HR_EMPLOYEE;
 // rep1's resolved L1 approver (Chirag, senior_sales_executive) submitting from
 // two tabs at once — the realistic double-approve. org_manager is only L2 (403
 // at L1) and hr_admin works another branch (404), so neither pair ever raced.
-const APPROVERS = ['senior_sales_executive', 'senior_sales_executive'];
+const APPROVERS = [HR_APPROVER, HR_APPROVER]; // hrEmployee's reporting-line manager, two tabs
 
 if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit(0); }
 
@@ -34,7 +34,7 @@ function futureDate(days) {
 let reqId = scalar(`SELECT lr.id FROM hr.leave_requests lr
   JOIN hr.leave_request_statuses s ON s.id=lr.status_id
   JOIN iam.users u ON u.id=lr.user_id
-  WHERE s.name='pending' AND u.email=${lit(roleMeta('sales_representative').email)} AND NOT lr.is_deleted
+  WHERE s.name='pending' AND u.email=${lit(roleMeta(HR_EMPLOYEE).email)} AND NOT lr.is_deleted
   ORDER BY lr.created_at DESC LIMIT 1`);
 
 const rep = await actor(REQUESTER);
@@ -54,7 +54,7 @@ if (!reqId) {
     // balance. The seed ships neither for this org, so bootstrap via the
     // product APIs as org_admin (idempotent enough — policy may 409 if it
     // already exists, which is fine).
-    const orgId = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(roleMeta('sales_representative').org)} LIMIT 1`);
+    const orgId = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(roleMeta(HR_EMPLOYEE).org)} LIMIT 1`);
     const admin = await actor('org_admin');
     const pol = await apiPost(admin, `${HR}/api/hr/leave/policies`, {
       leave_type_name: LEAVE_TYPE, org_id: orgId, accrual_frequency: 'yearly', accrual_amount: 12,
@@ -62,13 +62,13 @@ if (!reqId) {
     });
     console.log(`Bootstrap casual policy (org_admin) -> ${pol.status}`);
     // The rep starts with 0 accrued balance; credit some so apply can succeed.
-    const repUserId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative').email)} LIMIT 1`);
+    const repUserId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta(HR_EMPLOYEE).email)} LIMIT 1`);
     const adj = await apiPost(admin, `${HR}/api/hr/leave/adjustments`, {
       user_id: repUserId, leave_type_name: LEAVE_TYPE, amount: 5, note: 'E2E concurrency bootstrap',
     });
     console.log(`Bootstrap ${LEAVE_TYPE} balance (org_admin) -> ${adj.status}`);
     // Adjustments are capability-gated per tenant; the balance is a precondition only.
-    if (adj.status >= 300) console.log(`  fallback DB seed: ${seedLeaveBalance(roleMeta('sales_representative').email, LEAVE_TYPE, 5, 'E2E concurrency bootstrap')} row`);
+    if (adj.status >= 300) console.log(`  fallback DB seed: ${seedLeaveBalance(roleMeta(HR_EMPLOYEE).email, LEAVE_TYPE, 5, 'E2E concurrency bootstrap')} row`);
     await admin.close();
     created = await apiPost(rep, `${HR}/api/hr/leave/requests`, {
       leave_type_name: LEAVE_TYPE, start_date: start, end_date: end, reason: 'E2E concurrency probe',
@@ -88,7 +88,7 @@ if (!reqId) {
   }
   await new Promise((r) => setTimeout(r, 400));
   reqId = scalar(`SELECT lr.id FROM hr.leave_requests lr JOIN iam.users u ON u.id=lr.user_id
-    WHERE u.email=${lit(roleMeta('sales_representative').email)} AND lr.reason='E2E concurrency probe'
+    WHERE u.email=${lit(roleMeta(HR_EMPLOYEE).email)} AND lr.reason='E2E concurrency probe'
     ORDER BY lr.created_at DESC LIMIT 1`);
 }
 if (!reqId) { console.log('No pending request id — aborting'); await rep.close(); process.exit(0); }

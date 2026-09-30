@@ -23,21 +23,21 @@
 // which a 404 does not.
 //
 //   node suites/hr/request-detail-idor.mjs
-import { APPS, record, roleMeta, CROSS_TENANT } from '../../lib.mjs';
+import { APPS, record, roleMeta, CROSS_TENANT, HR_EMPLOYEE } from '../../lib.mjs';
 import { leaveTypeFor, seedLeaveBalance } from '../../fixtures.mjs';
 import { actor, apiGet, apiPost, readResp } from '../../conc.mjs';
 import { dbReachable, scalar, q, lit } from '../../db.mjs';
 import { logAction, outcomeOf } from '../../journal.mjs';
 import { chromium } from '@playwright/test';
 import crypto from 'node:crypto';
-const LEAVE_TYPE = leaveTypeFor(roleMeta('sales_representative').email);
+const LEAVE_TYPE = leaveTypeFor(roleMeta(HR_EMPLOYEE).email);
 
 const TOOL = 'hr';
 const HR = APPS['hr-web'];
 if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit(0); }
 
 const stamp = Date.now();
-const repEmail = roleMeta('sales_representative').email;
+const repEmail = roleMeta(HR_EMPLOYEE).email;
 const repId = scalar(`SELECT id FROM iam.users WHERE email=${lit(repEmail)} LIMIT 1`);
 const tenantId = scalar(`SELECT o.tenant_id FROM iam.users u JOIN entity.organizations o ON o.id=u.org_id WHERE u.id=${lit(repId)}`);
 const typeId = scalar(`SELECT id FROM hr.leave_types WHERE name=${lit(LEAVE_TYPE)} AND tenant_id=${lit(tenantId)}::uuid LIMIT 1`);
@@ -53,24 +53,24 @@ const bodyHasRecord = (body, id) => JSON.stringify(body ?? '').includes(id) && !
 
 const actors = {};
 const open = async (key) => { try { actors[key] = await actor(key); } catch { actors[key] = null; } return actors[key]; };
-await open('sales_representative');
+await open(HR_EMPLOYEE);
 await open('org_admin');
 const createdLeave = []; const createdReg = [];
 
 try {
-  const rep = actors.sales_representative; const admin = actors.org_admin;
+  const rep = actors[HR_EMPLOYEE]; const admin = actors.org_admin;
   // Seed balance, then apply one leave as rep1 (API — the UI round trip is covered in ui/ui-write-roundtrip).
   seedLeaveBalance(repEmail, LEAVE_TYPE, 2, `E2E-idor-seed-${stamp}`);
   const apply = await apiPost(rep, `${HR}/api/hr/leave/requests`, { leave_type_name: LEAVE_TYPE, start_date: d(24), end_date: d(24), reason: `E2E-idor-${stamp}` });
   const leaveId = apply.body?.data?.id ?? apply.body?.id ?? scalar(`SELECT id FROM hr.leave_requests WHERE user_id=${lit(repId)} AND reason=${lit(`E2E-idor-${stamp}`)} LIMIT 1`);
   if (leaveId) createdLeave.push(leaveId);
-  logAction({ tool: TOOL, role: 'sales_representative', area: 'Leave', action: 'apply 1-day casual leave (fixture for detail IDOR)', method: 'POST', endpoint: '/hr/leave/requests', status: apply.status, outcome: outcomeOf(apply.status, !!leaveId), verified: !!leaveId });
+  logAction({ tool: TOOL, role: HR_EMPLOYEE, area: 'Leave', action: 'apply 1-day casual leave (fixture for detail IDOR)', method: 'POST', endpoint: '/hr/leave/requests', status: apply.status, outcome: outcomeOf(apply.status, !!leaveId), verified: !!leaveId });
 
   let regId = null;
   for (const off of [-1, -2, -3]) {
     const r = await apiPost(rep, `${HR}/api/hr/attendance/regularizations`, { work_date: d(off), reason: `E2E-idor-reg-${stamp}` });
     regId = r.body?.data?.id ?? scalar(`SELECT id FROM hr.attendance_regularizations WHERE user_id=${lit(repId)} AND reason=${lit(`E2E-idor-reg-${stamp}`)} LIMIT 1`);
-    logAction({ tool: TOOL, role: 'sales_representative', area: 'Attendance', action: `request regularization for ${d(off)} (fixture)`, method: 'POST', endpoint: '/hr/attendance/regularizations', status: r.status, outcome: outcomeOf(r.status, !!regId), verified: !!regId });
+    logAction({ tool: TOOL, role: HR_EMPLOYEE, area: 'Attendance', action: `request regularization for ${d(off)} (fixture)`, method: 'POST', endpoint: '/hr/attendance/regularizations', status: r.status, outcome: outcomeOf(r.status, !!regId), verified: !!regId });
     if (regId) { createdReg.push(regId); break; }
   }
 
@@ -81,12 +81,12 @@ try {
   const anonCtx = (await browser.newContext()).request;
 
   const matrix = async (label, path, id) => {
-    if (!id) { fail('info', 'sales_representative', label, `Create a ${label} fixture`, 'created', 'not created', '', 'Precondition — see the lifecycle suites.'); return; }
+    if (!id) { fail('info', HR_EMPLOYEE, label, `Create a ${label} fixture`, 'created', 'not created', '', 'Precondition — see the lifecycle suites.'); return; }
     // owner
-    const own = await apiGet(actors.sales_representative, `${HR}/api${path}/${id}`);
+    const own = await apiGet(actors[HR_EMPLOYEE], `${HR}/api${path}/${id}`);
     const ownOk = own.status === 200 && bodyHasRecord(own.body, id);
-    logAction({ tool: TOOL, role: 'sales_representative', area: label, action: `owner opens ${label} detail`, method: 'GET', endpoint: `${path}/:id`, status: own.status, outcome: outcomeOf(own.status, ownOk), verified: ownOk, expected: '200' });
-    if (!ownOk) fail('high', 'sales_representative', label, `Owner opens their ${label} detail (View modal)`, '200 with the request + approval chain', `HTTP ${own.status}`, JSON.stringify(own.body).slice(0, 200),
+    logAction({ tool: TOOL, role: HR_EMPLOYEE, area: label, action: `owner opens ${label} detail`, method: 'GET', endpoint: `${path}/:id`, status: own.status, outcome: outcomeOf(own.status, ownOk), verified: ownOk, expected: '200' });
+    if (!ownOk) fail('high', HR_EMPLOYEE, label, `Owner opens their ${label} detail (View modal)`, '200 with the request + approval chain', `HTTP ${own.status}`, JSON.stringify(own.body).slice(0, 200),
       `Gateway GET ${path}/:id must proxy to hr-service; the modal is dead without it.`);
     // everybody else (super_admin included: the route is owner-only by design, SA uses the admin views)
     const others = [...peerKeys, ...CROSS_TENANT.map((x) => x.stateKey)].filter((k) => actors[k]);
@@ -110,9 +110,9 @@ try {
     logAction({ tool: TOOL, role: 'anonymous', area: label, action: `anonymous opens ${label} detail`, method: 'GET', endpoint: `${path}/:id`, status: anon.status, outcome: outcomeOf(anon.status), verified: anon.status === 401, expected: '401' });
     if (anon.status !== 401) fail(anon.status === 200 ? 'critical' : 'medium', 'anonymous', label, `Anonymous GET ${path}/:id`, '401', `HTTP ${anon.status}`, JSON.stringify(anon.body).slice(0, 200), 'withAuth on the gateway route.');
     for (const bad of ['not-a-uuid', '00000000-0000-0000-0000-000000000000']) {
-      const r = await apiGet(actors.sales_representative, `${HR}/api${path}/${bad}`);
-      logAction({ tool: TOOL, role: 'sales_representative', area: label, action: `open ${label} detail with id "${bad.slice(0, 12)}"`, method: 'GET', endpoint: `${path}/:id`, status: r.status, outcome: outcomeOf(r.status), verified: r.status < 500, expected: '400/404' });
-      if (r.status >= 500) fail('medium', 'sales_representative', label, `GET ${path}/${bad}`, '400/404', `HTTP ${r.status}`, JSON.stringify(r.body).slice(0, 200),
+      const r = await apiGet(actors[HR_EMPLOYEE], `${HR}/api${path}/${bad}`);
+      logAction({ tool: TOOL, role: HR_EMPLOYEE, area: label, action: `open ${label} detail with id "${bad.slice(0, 12)}"`, method: 'GET', endpoint: `${path}/:id`, status: r.status, outcome: outcomeOf(r.status), verified: r.status < 500, expected: '400/404' });
+      if (r.status >= 500) fail('medium', HR_EMPLOYEE, label, `GET ${path}/${bad}`, '400/404', `HTTP ${r.status}`, JSON.stringify(r.body).slice(0, 200),
         'Validate :id as a uuid before the query (a bad uuid cast surfaces as a 500 from Postgres).');
     }
   };

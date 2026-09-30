@@ -23,7 +23,7 @@
 // found (snapshotted via GET before any write).
 //
 //   node suites/hr/regularization-window.mjs
-import { APPS, record, roleMeta } from '../../lib.mjs';
+import { APPS, record, roleMeta, HR_EMPLOYEE } from '../../lib.mjs';
 import { actor, apiGet, apiPost, apiPut } from '../../conc.mjs';
 import { dbReachable, scalar, q, lit } from '../../db.mjs';
 
@@ -31,13 +31,13 @@ const TOOL = 'hr';
 const HR = APPS['hr-web'];
 const REG_URL = `${HR}/api/hr/attendance/regularizations`;
 const RULES_URL = `${HR}/api/hr/attendance/rules/admin`;
-const REQUESTER = 'sales_representative';
+const REQUESTER = HR_EMPLOYEE;
 const ADMIN = 'org_admin';
 
 if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit(0); }
 
 const stamp = Date.now();
-const reqId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative').email)} LIMIT 1`);
+const reqId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta(HR_EMPLOYEE).email)} LIMIT 1`);
 if (!reqId) { console.log('Could not resolve rep1 — aborting'); process.exit(0); }
 
 const d = (offset) => { const x = new Date(); x.setDate(x.getDate() + offset); return x.toISOString().slice(0, 10); };

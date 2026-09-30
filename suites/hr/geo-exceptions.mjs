@@ -23,7 +23,7 @@
 // serves as the unprivileged actor for the negative capability checks.
 //
 //   node suites/hr/geo-exceptions.mjs
-import { APPS, record, roleMeta } from '../../lib.mjs';
+import { APPS, record, roleMeta, HR_EMPLOYEE } from '../../lib.mjs';
 import { actor, apiGet, apiPost, apiPatch } from '../../conc.mjs';
 import { dbReachable, scalar, q, lit } from '../../db.mjs';
 
@@ -35,7 +35,7 @@ const HR = APPS['hr-web'];
 // hr-service's capability gate.
 const GEO_URL = `${HR}/api/hr/geo-exceptions`;
 const CHECK_IN = `${HR}/api/hr/attendance/check-in`;
-const REQUESTER = 'sales_representative';
+const REQUESTER = HR_EMPLOYEE;
 const ADMIN = 'hr_admin'; // holds geo_exceptions.manage; Fitclass org_admin has no HR caps
 
 const CENTER = { lat: 28.4595, lng: 77.0266 };
@@ -48,7 +48,7 @@ if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit
 const stamp = Date.now();
 const orgName = roleMeta(REQUESTER)?.org;
 const orgId = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(orgName)} LIMIT 1`);
-const userId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative').email)} LIMIT 1`);
+const userId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta(HR_EMPLOYEE).email)} LIMIT 1`);
 if (!orgId || !userId) { console.log(`Could not resolve org (${orgName}) / rep1 — aborting`); process.exit(0); }
 
 const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());

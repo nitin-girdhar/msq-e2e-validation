@@ -27,7 +27,7 @@
 // in a finally block.
 //
 //   node suites/hr/attendance-split-shift.mjs
-import { APPS, record, roleMeta } from '../../lib.mjs';
+import { APPS, record, roleMeta, HR_EMPLOYEE } from '../../lib.mjs';
 import { actor, apiPost, apiGet } from '../../conc.mjs';
 import { dbReachable, scalar, q, rows, lit } from '../../db.mjs';
 
@@ -36,13 +36,13 @@ const HR = APPS['hr-web'];
 // tenant_admin, not org_admin: FitClass grants org_admin no HR capabilities at
 // all (tenant config), so an org_admin shift create is a correct 403.
 const ADMIN_ROLE = 'tenant_admin'; // holds HR_ATTENDANCE_ADMIN_ASSIGNMENTS_MANAGE + HR_ATTENDANCE_PHOTO_VIEW
-const EMPLOYEE_ROLE = 'sales_representative'; // rep1 — reused the same way attendance-geofence-guard.mjs does
+const EMPLOYEE_ROLE = HR_EMPLOYEE; // rep1 — reused the same way attendance-geofence-guard.mjs does
 
 if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit(0); }
 
 const orgName = roleMeta(EMPLOYEE_ROLE)?.org;
 const orgId = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(orgName)} LIMIT 1`);
-const userId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative').email)} LIMIT 1`);
+const userId = scalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta(HR_EMPLOYEE).email)} LIMIT 1`);
 if (!orgId || !userId) { console.log(`Could not resolve org (${orgName}) / rep1 user — aborting`); process.exit(0); }
 
 const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());

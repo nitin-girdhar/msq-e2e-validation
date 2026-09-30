@@ -111,6 +111,9 @@ export function appPath(url) {
   return p;
 }
 export const ROLES = cfg.roles.map((r) => r.role);
+// HR self-service actors — picked by capability, not role name (roles.json _hrActors).
+export const HR_EMPLOYEE = cfg.hrEmployee ?? 'sales_representative';
+export const HR_APPROVER = cfg.hrApprover ?? 'org_manager';
 export const SECONDARY = cfg.secondaryActors ?? [];
 // Tenant B logins, used to prove cross-tenant isolation.
 export const CROSS_TENANT = cfg.crossTenantActors ?? [];

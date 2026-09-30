@@ -26,7 +26,7 @@
 //
 //   node suites/admin/capability-matrix-ui.mjs
 import { openState, visit, record, APPS, roleMeta } from '../../lib.mjs';
-import { actor } from '../../conc.mjs';
+import { actor, freshLogin, with429Retry } from '../../conc.mjs';
 import { dbReachable, q, lit } from '../../db.mjs';
 import {
   tenantIdForOrg, roleId, capabilityId, resolvedCapabilities,
@@ -76,14 +76,33 @@ function restore() {
   }
 }
 
-const { browser, page, log } = await openState(ADMIN_ROLE);
+// The SA console's tenant is the SESSION's tenant since 1.55.0 (the SA-only
+// tenant cookie was retired; the navbar switch re-mints the session). So act
+// the way a super_admin now does: a FRESH login, switched into the target
+// tenant. Never switch the stored .auth state — switch-org revokes it.
+const sa = await freshLogin(roleMeta(ADMIN_ROLE).email);
+const sw = await with429Retry(
+  () => sa.request.post(`${APPS['auth-web']}/api/auth/switch-org`, { data: { all_branches: true, tenant_id: tenantId }, failOnStatusCode: false }),
+  { label: 'super_admin tenant switch' },
+);
+console.log(`  super_admin switch into tenant ${tenantId} -> HTTP ${sw.status()}`);
+const page = await sa.context.newPage();
+const log = { badRequests: [] };
+page.on('response', (r) => { if (r.status() >= 400) log.badRequests.push(`${r.status()} ${r.request().method()} ${r.url()}`); });
+const browser = { close: () => sa.close() };
 const repActor = await actor(TARGET_ROLE);
 
 try {
-  // Tenant scope moved from an on-page #tenant-scope <select> to the app-wide
-  // navbar TenantScopeSwitcher, which only writes this cookie and refreshes
-  // the server components — so set the cookie the same way, then load.
-  await page.context().addCookies([{ name: 'msq_admin_tenant_id', value: tenantId, url: new URL(APP).origin, sameSite: 'Lax' }]);
+  if (sw.status() >= 300) {
+    record(TOOL, {
+      severity: 'high', role: ADMIN_ROLE, tool: TOOL, page: 'Lookup Admin / capabilities/matrix',
+      scenario: 'super_admin switches its session into the target tenant',
+      expected: '2xx (1.55.0 tenant switch)', actual: `HTTP ${sw.status()}`,
+      evidence: (await sw.text().catch(() => '')).slice(0, 300),
+      proposedSolution: 'identity-service switchOrg must admit { all_branches, tenant_id } for a platform super_admin.',
+    });
+    throw new Error('tenant switch failed — aborting suite');
+  }
   await visit(page, `${APP}/dashboard/capabilities/matrix`);
 
   // Then the target role.
