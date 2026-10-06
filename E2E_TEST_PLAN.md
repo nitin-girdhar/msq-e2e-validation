@@ -383,6 +383,18 @@ referenced by any suite, and the harness itself could no longer reach the apps.
 
 ---
 
+## 4f. Coverage pass 2026-10-06
+
+See README "Coverage pass 2026-10-06" for the suite table. Not yet executed
+(stack was down). Code-reading suspects the first run should confirm or clear:
+shift-assignment update does not check the shift's org (possible cross-tenant
+reference) and likely 500s on the date-order CHECK; `csvEscape` does not
+neutralise leading `=+-@`; documents dossier with a non-uuid id probably 500s;
+push subscription endpoint accepts internal URLs (SSRF); branches with reps but
+no weighted user (LMS-5/W1).
+
+---
+
 ## 5. Suggested run wiring
 
 Add the new suites to `run-all.mjs` in the write/matrix band, and to

@@ -8,11 +8,7 @@
 //   - WFH regularization      → requested_status_name='wfh'; approving credits the day as WFH
 //   - SELF-APPROVAL guard      → the requester cannot approve/reject their own correction
 //
-// Note (coverage gap in the PRODUCT, not the harness): the attendance router
-// exposes only .../approve and .../reject — there is no cancel/withdraw or
-// edit-pending endpoint for a regularization, so the "requester cancels/edits a
-// pending request" flow cannot be tested until those endpoints exist. This suite
-// records that as an info finding so it is tracked.
+// Note: requester cancel / edit-pending now exist; they are covered by hr-self-routes-dossier.mjs.
 //
 // Actors: read_only (viewer, FitClass-Gurgaon) requests; org_admin approves/
 // rejects (canOverrideAttendanceApproval). Self-cleaning.
@@ -158,15 +154,11 @@ try {
     }
   }
 
-  // ── 5. Missing cancel/edit endpoints — track as a product coverage gap ───────
-  record(TOOL, {
-    severity: 'info', role: 'n/a', tool: TOOL, page: 'Regularization API surface',
-    scenario: 'Look for a requester cancel/withdraw or edit-pending endpoint for regularizations',
-    expected: 'A requester can cancel/withdraw or amend a pending regularization before it is decided',
-    actual: 'The attendance router exposes only /approve and /reject — there is no cancel/withdraw or edit endpoint, so a mistaken pending request can only be resolved by an approver.',
-    evidence: 'attendance.router.ts: POST .../regularizations/:id/approve and /reject only',
-    proposedSolution: 'Add POST /regularizations/:id/cancel (requester-owned, pending-only) and optionally a PATCH to amend a pending request, then extend this suite to cover them.',
-  });
+  // ── 5. Cancel / edit-pending ───────────────────────────────────────────────
+  // POST /regularizations/:id/cancel and PATCH /regularizations/:id now exist (requester-owned,
+  // pending-only). Their IDOR / state-machine / audit coverage lives in hr-self-routes-dossier.mjs;
+  // the former "missing endpoint" info finding was removed because it is no longer true.
+  console.log('5. cancel/edit-pending: covered by suites/hr/hr-self-routes-dossier.mjs');
 } finally {
   await rep.close();
   await admin.close();

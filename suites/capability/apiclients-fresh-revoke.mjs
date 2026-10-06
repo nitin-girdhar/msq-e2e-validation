@@ -20,7 +20,7 @@
 // capability's OWNING FEATURE is relocated, not just renamed.
 //
 // The fix resolves the capability FRESH (hasCapabilityFresh, bypassing the TTL
-// cache) on these endpoints. This asserts that: revoke platform.api_tokens.view
+// cache) on these endpoints. This asserts that: revoke admin.api_tokens.view
 // for org_admin, then WITHOUT any wait/poll call GET {gateway}/api-clients and
 // require a 403 on the very first call — no TTL grace. Restored in a finally block.
 //
@@ -32,7 +32,7 @@ import { tenantIdForOrg, resolvedCapabilities, setOverride, restoreAll, pendingO
 
 const TOOL = 'capability';
 const ROLE = 'org_admin';
-const CAP = 'platform.api_tokens.view';
+const CAP = 'admin.api_tokens.view';
 const URL = `${cfg.gateway}/api-clients`;
 
 if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit(0); }

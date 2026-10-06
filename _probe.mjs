@@ -1,0 +1,10 @@
+import * as K from './suites/hr/_leave-kit.mjs';
+const { HR, actor, apiPost, scalar, lit, q } = K;
+q(`DELETE FROM hr.comp_off_claims WHERE reason LIKE 'E2E-compoff-%'`);
+const t=Date.now(); const lap=(m)=>console.log(m, Date.now()-t);
+const e=K.emailOfKey('super_admin'); lap(e);
+const uid=scalar(`SELECT id FROM iam.users WHERE email=${lit(e.toLowerCase())}`); lap(uid);
+const pat=K.weeklyOffOf(uid); lap(JSON.stringify(pat));
+const a=await actor('super_admin'); lap('actor');
+const r=await apiPost(a,`${HR}/api/hr/leave/comp-off`,{worked_date:K.recentOffDay(pat,new Set()),days:1,reason:'E2E-compoff-probe'}); lap(r.status+JSON.stringify(r.body));
+await a.close(); q(`DELETE FROM hr.comp_off_claims WHERE reason LIKE 'E2E-compoff-%'`);

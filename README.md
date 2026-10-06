@@ -413,6 +413,36 @@ replaces that stage's findings/actions from the last pass — then
 hand-verified `openissues.curated.md` (root cause, control flow, fix per defect) and a
 page × role coverage matrix built from the crawl, and writes `../openissues.md`.
 
+## Coverage pass 2026-10-06 (schema 1.59–1.70, HR parity H10–H12, Stitch redesign)
+
+Authored without a live stack (Docker/Postgres were down) — **none of these has
+been run yet**; expect a shake-out run to fix selectors and guessed response
+shapes. Full wiring is in `run-all.mjs`; sixteen HR suites that were authored
+earlier but never wired (payroll, swap desk, planner, documents vault, comp-off,
+encashment, announcements/assets, people, profile-360, punch hub, attendance UI
+flows/role matrix, leave-apply-v2) are now in the HR band, as are
+`core/branding`, `core/auth-recovery` and `todo/tasks-v2`.
+
+| Suite | Proves |
+| --- | --- |
+| `hr/hr-taxonomy-holidays.mjs` | Departments/designations/holiday calendars/leave-policy PATCH + create authz (by live capability), cross-tenant/branch IDOR, mass-assignment, 4xx-not-5xx validation, 409 duplicates, simultaneous-create race. |
+| `hr/hr-self-routes-dossier.mjs` | `/me/activity` privacy, `me/shift`, `today-summary` counts-only, regularization cancel IDOR + state machine, `reports/detail` csv/xlsx + CSV-injection, documents dossier ZIP, shift / shift-assignment PATCH. |
+| `todo/task-soft-delete.mjs` | Task + list soft delete (service tx bypasses RLS, so service checks are the only guard): creator/admin only, cross-branch/tenant refused, deleted rows invisible everywhere, races, UI archive flow. |
+| `core/branding-ownership.mjs` | SA vs tenant vs user field ownership, malformed terms/menu rejected, tenant-B write isolation, personal `font_size` per login. |
+| `core/auth-screens.mjs` | `/select-branch` and `/no-access` agree with the API, fail safe, hostile `callbackUrl` blocked. |
+| `visual/text-size-scaling.mjs` | 4-step text size scales rendered text in every app, no px-pinned text, persisted size renders server-side. |
+| `admin/admin-web-console.mjs` | Console gating per login, Team tenant isolation/scope, API Tokens UI + API, leave/attendance admin shells. |
+| `tenant/cross-tenant-new-modules.mjs` | Tenant B vs tenant A on every new HR/LMS/Tasks table: UUID leak scan plus before/after row snapshots on ~35 writes. |
+| `lms/meta-routing-and-weights.mjs` | Read-only: Meta routing decisions, weights, rule-engine precedence, console inventory (buttons never clicked). |
+| `lms/meta-console-1-70-authz.mjs` | Meta console 1.70 write routes (campaign archive / PATCH, run selection / discard, page-health validate): every non-super-admin login + tenant B must be refused; super_admin only gets nil ids and must see a 4xx; DB state unchanged. Never reaches the Meta Graph API. |
+| `platform/push-flag-and-stream.mjs` | `WEB_PUSH_ENABLED` per environment, SSRF on push endpoints, stream handshake/logout hardening. |
+| `data/data-health.mjs` (extended) | 33 new tables (RLS enabled/forced, service logins named, grants), new capabilities + back-fill pins, HR/Tasks integrity, weights, Meta routing. |
+| `security/api-surface-sweep.mjs` (extended) | Parser self-check + new-route-family guard; new HR `:id` routes exercised. |
+| `visual/responsive-audit.mjs` (extended) | Todo, lookup-admin branding and auth-web screens added (`--no-extras` skips). |
+
+Also fixed: `capability/apiclients-fresh-revoke.mjs` used the renamed capability
+key `platform.api_tokens.view` (now `admin.api_tokens.view`).
+
 ## Notes
 
 - Legacy per-scenario probes (the "level 1" setup) were moved into `suites/<tool>/`

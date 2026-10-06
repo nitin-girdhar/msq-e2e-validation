@@ -58,7 +58,12 @@ const STAGES = [
   { tag: 'security', script: 'suites/security/public-api-v2.mjs' },
   { tag: 'core', script: 'suites/core/switch-org.mjs' },
   { tag: 'core', script: 'suites/core/account-session-lifecycle.mjs' },
+  { tag: 'core', script: 'suites/core/branding.mjs' },
+  { tag: 'core', script: 'suites/core/branding-ownership.mjs' },
+  { tag: 'core', script: 'suites/core/auth-recovery.mjs' },
+  { tag: 'core', script: 'suites/core/auth-screens.mjs' },
   { tag: 'platform', script: 'suites/platform/push-and-stream.mjs' },
+  { tag: 'platform', script: 'suites/platform/push-flag-and-stream.mjs' },
 
   // Depth — real writes, graded across the role ladder, verified in Postgres.
   { tag: 'lms', script: 'suites/lms/lms-crud-matrix.mjs' },
@@ -69,6 +74,8 @@ const STAGES = [
   { tag: 'lms', script: 'suites/lms/bulk-assign.mjs' },
   { tag: 'lms', script: 'suites/lms/public-report-api.mjs' },
   { tag: 'lms', script: 'suites/lms/public-read-api.mjs' },
+  { tag: 'lms', script: 'suites/lms/meta-routing-and-weights.mjs' },
+  { tag: 'lms', script: 'suites/lms/meta-console-1-70-authz.mjs' },
   { tag: 'hr', script: 'suites/hr/hr-admin-matrix.mjs' },
   { tag: 'hr', script: 'suites/hr/hr-employees-reports.mjs' },
   { tag: 'hr', script: 'suites/hr/attendance-geofence-guard.mjs' },
@@ -81,12 +88,31 @@ const STAGES = [
   { tag: 'hr', script: 'suites/hr/request-detail-approval-chain.mjs' },
   { tag: 'hr', script: 'suites/hr/request-detail-idor.mjs' },
   { tag: 'hr', script: 'suites/hr/monthly-summary-wfh.mjs' },
+  { tag: 'hr', script: 'suites/hr/hr-announcements-assets.mjs' },
+  { tag: 'hr', script: 'suites/hr/hr-attendance-role-matrix.mjs' },
+  { tag: 'hr', script: 'suites/hr/hr-attendance-ui-flows.mjs' },
+  { tag: 'hr', script: 'suites/hr/hr-documents-vault.mjs' },
+  { tag: 'hr', script: 'suites/hr/hr-payroll.mjs' },
+  { tag: 'hr', script: 'suites/hr/hr-people-role-matrix.mjs' },
+  { tag: 'hr', script: 'suites/hr/hr-people-ui.mjs' },
+  { tag: 'hr', script: 'suites/hr/hr-profile-360.mjs' },
+  { tag: 'hr', script: 'suites/hr/hr-punch-hub-admin.mjs' },
+  { tag: 'hr', script: 'suites/hr/hr-roster-planner.mjs' },
+  { tag: 'hr', script: 'suites/hr/hr-swap-desk.mjs' },
+  { tag: 'hr', script: 'suites/hr/leave-apply-v2.mjs' },
+  { tag: 'hr', script: 'suites/hr/leave-comp-off.mjs' },
+  { tag: 'hr', script: 'suites/hr/leave-encashment.mjs' },
+  { tag: 'hr', script: 'suites/hr/hr-taxonomy-holidays.mjs' },
+  { tag: 'hr', script: 'suites/hr/hr-self-routes-dossier.mjs' },
   { tag: 'todo', script: 'suites/todo/task-visibility-matrix.mjs' },
   { tag: 'todo', script: 'suites/todo/task-comments-lists.mjs' },
+  { tag: 'todo', script: 'suites/todo/tasks-v2.mjs' },
+  { tag: 'todo', script: 'suites/todo/task-soft-delete.mjs' },
   { tag: 'admin', script: 'suites/admin/lookup-crud.mjs' },
   { tag: 'admin', script: 'suites/admin/user-management.mjs' },
   { tag: 'admin', script: 'suites/admin/team-user-contracts.mjs' },
   { tag: 'admin', script: 'suites/admin/lookup-module-nav.mjs' },
+  { tag: 'admin', script: 'suites/admin/admin-web-console.mjs' },
 
   // UI round trip — real writes through the browser, verified in Postgres, per role.
   { tag: 'ui', script: 'suites/ui/ui-write-roundtrip.mjs', timeout: 60 * MIN },
@@ -94,6 +120,7 @@ const STAGES = [
   // Cross-tenant isolation: log in as tenant B and try to see/touch tenant A.
   { tag: 'tenant', script: 'suites/tenant/cross-tenant-isolation.mjs' },
   { tag: 'tenant', script: 'suites/tenant/cross-tenant-hr-config.mjs' },
+  { tag: 'tenant', script: 'suites/tenant/cross-tenant-new-modules.mjs' },
 
   // Authorization / entitlement config toggles — reversible, journalled, late:
   // everything that assumes baseline grants has already run.
@@ -110,6 +137,7 @@ const STAGES = [
 
   // Look and feel across phone/tablet/laptop/desktop.
   { tag: 'visual', script: 'suites/visual/responsive-audit.mjs', timeout: 90 * MIN },
+  { tag: 'visual', script: 'suites/visual/text-size-scaling.mjs', timeout: 60 * MIN },
 
   // Offline analysis over the crawl output.
   { tag: 'analysis', script: 'suites/core/tab-authz-consistency.mjs' },

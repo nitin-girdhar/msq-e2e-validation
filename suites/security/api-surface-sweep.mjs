@@ -45,7 +45,9 @@ if (!fs.existsSync(SRC)) { console.log(`Gateway source not found at ${SRC} (set 
 // ── 1. Route inventory, parsed from the gateway source ──────────────────────
 const src = fs.readFileSync(SRC, 'utf8');
 const routes = [];
-const RX = /^app\.(get|post|put|patch|delete)\(\s*(['`])([^'`]+)\2\s*,\s*(\{[^}]*\})?/gm;
+// /sa/tenants/:id/branding* are withAuth at the edge; super_admin is enforced by identity-service.
+const SA_PATHS = [/^\/sa\//];
+const RX = /^app\.(get|post|put|patch|delete)\(\s*(['`"])([^'`"]+)\2\s*,\s*(\{[^}]*\})?/gm;
 const matches = [...src.matchAll(RX)];
 for (let i = 0; i < matches.length; i++) {
   const m = matches[i];
@@ -69,7 +71,32 @@ for (const [mapName, saRead] of [['GLOBAL_LOOKUP_TARGETS', true], ['TENANT_LOOKU
   }
 }
 for (const r of routes) {
-  if (r.guard === 'sa' || r.target === 'adminServiceUrl') r.saOnly = true;
+  if (r.guard === 'sa' || r.target === 'adminServiceUrl' || SA_PATHS.some((rx) => rx.test(r.path))) r.saOnly = true;
+}
+
+// Parser self-check. Schema 1.53-1.70 added ~150 routes (inline { preHandler: [...] } options,
+// /sa/* prefixes, lookup loops). The route table is only as complete as RX, so count EVERY
+// app.<verb>( call in the file with an independent, looser pattern and name any the parser did
+// not turn into a route — a route the sweep cannot see is a route nobody grades.
+{
+  const parsed = new Set(routes.map((r) => `${r.method} ${r.path}`));
+  const loose = [...src.matchAll(/\bapp\.(get|post|put|patch|delete)\(\s*([`'"])([^`'"]+)\2/g)];
+  const missed = loose.filter((m) => !m[3].includes('${') && !parsed.has(`${m[1].toUpperCase()} ${m[3]}`)).map((m) => `${m[1].toUpperCase()} ${m[3]}`);
+  const exotic = [...src.matchAll(/\bapp\.(all|route|head|options)\(|\bapp\.register\((?!cookie|cors)[^)]*prefix/g)].map((m) => m[0]);
+  const looped = loose.filter((m) => m[3].includes('${')).length;
+  console.log(`parser self-check: ${loose.length} app.<verb>( calls in source, ${routes.length} routes parsed (${looped} registered in lookup loops), unparsed=${missed.length}, exotic registrations=${exotic.length}`);
+  if (missed.length || exotic.length) {
+    fail('high', 'harness', 'API surface sweep cannot see every gateway route', 'Every app.<verb>(...) registration in server.ts is parsed into the route table',
+      `unparsed: ${missed.slice(0, 15).join(', ') || '-'}; exotic: ${exotic.join(', ') || '-'}`, `source=${SRC}`,
+      'Extend RX / the lookup-loop expansion in suites/security/api-surface-sweep.mjs for the new registration style — until then these routes are NOT swept for anonymous access, 5xx or tenant leaks.');
+  }
+  // Drift guard: route families added in 1.53-1.70 must be present, or the parser silently lost a block.
+  const need = ['/hr/payroll/', '/hr/documents/', '/hr/leave/comp-off', '/hr/leave/encashments', '/hr/attendance/swaps', '/hr/attendance/planner/', '/hr/announcements', '/hr/assets', '/hr/profile/', '/me/branding', '/tenant/branding', '/sa/tenants/:id/branding', '/leads/bulk', '/campaign-types/rules', '/meta/lead-pull/runs', '/meta/pages/health', '/tasks/bulk', '/tasks/export', '/users/assignment-weights', '/notifications/push/subscribe'];
+  const lost = need.filter((p) => !routes.some((r) => r.path.startsWith(p)));
+  if (lost.length) {
+    fail('high', 'harness', 'Gateway route families added in schema 1.53-1.70 are missing from the parsed route table', 'Every new route family is swept',
+      `not parsed: ${lost.join(', ')}`, `parsed=${routes.length}`, 'Either the gateway moved/renamed them (update `need` in this suite) or RX no longer matches their registration style.');
+  }
 }
 console.log(`Parsed ${routes.length} gateway routes (${routes.filter((r) => r.saOnly).length} super-admin-only) from ${path.relative(dir, SRC)}`);
 
@@ -80,7 +107,9 @@ console.log(`Parsed ${routes.length} gateway routes (${routes.filter((r) => r.sa
 //    (Meta Graph, WhatsApp provider) — the edge-denial half is still swept.
 const SKIP_AUTHED = [/^\/notifications\/stream$/, /^\/public\//, /^\/meta\/webhook/, /^\/intake\//, /^\/health$/, /^\/\.well-known\//];
 const EXTERNAL_WHEN_ALLOWED = [/^\/leads\/:id\/whatsapp\/templates$/, /^\/meta\/pages/, /^\/meta\/lead-pull\/campaigns$/, /^\/communications\/status$/];
-const PUBLIC_BY_DESIGN = [/^\/health$/, /^\/\.well-known\/jwks\.json$/, /^\/auth\/login$/, /^\/auth\/logout$/, /^\/meta\/webhook/, /^\/intake\/webhook$/, /^\/public\//];
+// forgot/reset-password: pre-login self-service. Hammering them anonymously would burn the shared
+// 10/min login bucket (reset) and send real emails (forgot); public-edge.mjs owns their behaviour.
+const PUBLIC_BY_DESIGN = [/^\/auth\/forgot-password$/, /^\/auth\/reset-password$/, /^\/health$/, /^\/\.well-known\/jwks\.json$/, /^\/auth\/login$/, /^\/auth\/logout$/, /^\/meta\/webhook/, /^\/intake\/webhook$/, /^\/public\//];
 
 // ── 2. Real ids for path params (tenant A), so we test data paths, not 404s ──
 const A = primaryTenant();
@@ -88,7 +117,20 @@ const orgA = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(roleMe
 const tenantA = scalar(`SELECT tenant_id FROM entity.organizations WHERE id=${lit(orgA)}`);
 const tryScalar = (sql) => { try { return scalar(sql); } catch { return null; } };
 const repId = tryScalar(`SELECT id FROM iam.users WHERE email=${lit(roleMeta('sales_representative')?.email ?? '')}`);
+// One real tenant-A row per HR table added in 1.59-1.67, so their :id routes are exercised on a
+// data path (and, for a tenant-B caller, proven not to serve it) instead of answering 404 for NIL.
+const hrId = (table, extra = '') => tryScalar(`SELECT t.id FROM ${table} t JOIN entity.organizations o ON o.id=t.org_id WHERE o.tenant_id=${lit(tenantA)}::uuid ${extra} ORDER BY t.created_at DESC LIMIT 1`);
 const P = {
+  payslip: hrId('hr.payslips', 'AND NOT t.is_deleted'),
+  document: hrId('hr.employee_documents', 'AND NOT t.is_deleted'),
+  leaveReq: hrId('hr.leave_requests'),
+  regularization: hrId('hr.attendance_regularizations'),
+  compOff: hrId('hr.comp_off_claims'),
+  encashment: hrId('hr.leave_encashment_requests'),
+  swap: hrId('hr.shift_swap_requests'),
+  changeReq: hrId('hr.profile_change_requests'),
+  announcement: hrId('hr.announcements'),
+  asset: hrId('hr.assets'),
   lead: tryScalar(`SELECT id FROM lms.marketing_leads WHERE org_id=${lit(orgA)} AND NOT is_deleted AND is_active ORDER BY created_at DESC LIMIT 1`),
   campaign: tryScalar(`SELECT id FROM marketing.ad_campaigns WHERE org_id=${lit(orgA)} LIMIT 1`),
   campaignType: tryScalar(`SELECT id FROM marketing.campaign_types WHERE tenant_id=${lit(tenantA)} LIMIT 1`),
@@ -113,7 +155,17 @@ function bind(p) {
     else if (/^\/tasks\/:id/.test(p)) v = P.task;
     else if (/^\/task-lists\/:id/.test(p)) v = P.taskList;
     else if (/^\/roles\/:id/.test(p)) v = P.role;
-    else if (/^\/tenants\/:id/.test(p)) v = P.tenant;
+    else if (/^\/tenants\/:id/.test(p) || /^\/sa\/tenants\/:id/.test(p)) v = P.tenant;
+    else if (/^\/hr\/payroll\/payslips\/:id/.test(p)) v = P.payslip;
+    else if (/^\/hr\/documents\/:id/.test(p)) v = P.document;
+    else if (/^\/hr\/leave\/requests\/:id/.test(p)) v = P.leaveReq;
+    else if (/^\/hr\/attendance\/regularizations\/:id/.test(p)) v = P.regularization;
+    else if (/^\/hr\/leave\/comp-off\/:id/.test(p)) v = P.compOff;
+    else if (/^\/hr\/leave\/encashments\/:id/.test(p)) v = P.encashment;
+    else if (/^\/hr\/attendance\/swaps\/:id/.test(p)) v = P.swap;
+    else if (/^\/hr\/profile\/change-requests\/:id/.test(p)) v = P.changeReq;
+    else if (/^\/hr\/announcements\/:id/.test(p)) v = P.announcement;
+    else if (/^\/hr\/assets\/:id/.test(p)) v = P.asset;
     if (v) tenantObject = true;
     return v || NIL;
   });

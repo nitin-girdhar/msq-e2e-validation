@@ -22,6 +22,11 @@ export const TOOLS = {
       { id: 'select-branch', label: 'Select Branch', path: '/select-branch' },
       { id: 'change-password', label: 'Change Password', path: '/change-password' },
       { id: 'no-access', label: 'No access', path: '/no-access' },
+      // Public auth screens (suites/core/auth-recovery.mjs, suites/visual/responsive-audit.mjs).
+      // public:true keeps the authenticated crawler off them; the audit visits them anonymously.
+      { id: 'forgot-password', label: 'Forgot password', path: '/forgot-password', public: true },
+      { id: 'reset-password', label: 'Reset password', path: '/reset-password?token=e2e-not-a-real-token', public: true },
+      { id: 'offline', label: 'Offline', path: '/offline', public: true },
     ],
     writeTables: [],
   },
@@ -51,6 +56,8 @@ export const TOOLS = {
       { id: 'api-tokens', label: 'API Tokens', path: '/dashboard/api-tokens' },
       { id: 'leave-admin', label: 'Leave Admin', path: '/dashboard/leave/admin' },
       { id: 'attendance-admin', label: 'Attendance Admin', path: '/dashboard/attendance/admin' },
+      // Stitch redesign (2026-10): tenant branding console.
+      { id: 'branding', label: 'Branding', path: '/dashboard/branding' },
     ],
     writeTables: ['iam.api_clients', 'hr.leave_policies', 'hr.attendance_rules', 'hr.attendance_geo_exceptions'],
   },
@@ -73,6 +80,7 @@ export const TOOLS = {
       { id: 'module-capabilities', label: 'Capabilities module', path: '/dashboard/m/capabilities' },
       { id: 'capability-matrix', label: 'Capability Matrix', path: '/dashboard/capabilities/matrix' },
       { id: 'users', label: 'Users', path: '/dashboard/users' },
+      { id: 'branding', label: 'Branding', path: '/dashboard/branding' },
       // Added 2026-08/09 (8b15c3c meta leads fetch, 13e0237 campaign types,
       // 1.44–1.51). Several carry IMMEDIATE-action buttons (Sync / Pull /
       // Apply / Retry / Ignore / Re-run) — crawl.mjs classifies those as
@@ -151,6 +159,16 @@ export const TOOLS = {
       { id: 'leave', label: 'My Leave', path: '/leave' },
       { id: 'leave-approvals', label: 'Leave Approvals', path: '/leave/approvals' },
       { id: 'leave-admin', label: 'Leave Admin', path: '/leave/admin' },
+      // HRMS Stitch parity (schema 1.59-1.67, 2026-10-04/05).
+      { id: 'hr-dashboard', label: 'HR Home', path: '/dashboard' },
+      { id: 'planner', label: 'Roster planner', path: '/planner' },
+      { id: 'employees', label: 'Employees', path: '/employees' },
+      { id: 'org-chart', label: 'Org chart', path: '/org-chart' },
+      { id: 'documents', label: 'Documents vault', path: '/documents' },
+      { id: 'payroll', label: 'Payroll', path: '/payroll' },
+      { id: 'profile', label: 'My profile', path: '/profile' },
+      { id: 'reports', label: 'Reports', path: '/reports' },
+      { id: 'hr-team', label: 'Team', path: '/team' },
     ],
     writeTables: ['hr.attendance_days', 'hr.attendance_regularizations', 'hr.leave_requests', 'hr.leave_policies', 'hr.shifts'],
   },
@@ -162,6 +180,7 @@ export const TOOLS = {
     routes: [
       { id: 'tasks', label: 'My Tasks', path: '/tasks' },
       { id: 'tasks-team', label: 'Team Tasks', path: '/tasks/team' },
+      { id: 'tasks-lists', label: 'Task lists', path: '/tasks/lists' },
     ],
     writeTables: ['task.tasks', 'task.task_lists'],
   },
