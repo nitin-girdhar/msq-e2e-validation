@@ -182,8 +182,10 @@ async function hostileCallbacks(email, label) {
     for (const cb of hostile) {
       const page = await s.context.newPage();
       const touched = [];
-      await page.route(/evil\.example/, (route) => { touched.push(route.request().url()); return route.abort(); });
-      page.on('request', (r) => { if (/evil\.example/.test(r.url())) touched.push(r.url()); });
+      // Match the HOST, not the URL: the callbackUrl under test sits in our own query string.
+      const evilHost = (u) => { try { return /(^|\.)evil\.example$/.test(new URL(u).hostname); } catch { return false; } };
+      await page.route((u) => evilHost(u.toString()), (route) => { touched.push(route.request().url()); return route.abort(); });
+      page.on('request', (r) => { if (evilHost(r.url())) touched.push(r.url()); });
       let dialog = false; page.on('dialog', (d) => { dialog = true; d.dismiss().catch(() => {}); });
       try {
         await page.goto(`${AUTH}/select-branch?callbackUrl=${encodeURIComponent(cb)}`, { waitUntil: 'domcontentloaded' }); await settle(page, 700);
@@ -194,7 +196,7 @@ async function hostileCallbacks(email, label) {
           await page.waitForTimeout(1500);
         }
         const finalHost = hostOf(page.url());
-        const bad = touched.length > 0 || /evil\.example/.test(finalHost) || dialog || /^javascript:/i.test(page.url());
+        const bad = touched.length > 0 || evilHost(page.url()) || dialog || /^javascript:/i.test(page.url());
         log({ role: label, area: 'auth-web /select-branch', action: `callbackUrl=${cb} never leaves our origins`, method: 'UI', endpoint: '/select-branch?callbackUrl=', status: null, outcome: 'visible', verified: !bad, expected: 'no navigation / request to a foreign host, no script execution' });
         if (bad) fail('high', label, `select-branch honoured a hostile callbackUrl: ${cb}`, 'resolveCallback rejects it; user lands on the session destination', `touched=${touched[0] ?? '-'} url=${page.url().slice(0, 100)} dialog=${dialog}`, '', 'resolveCallback (origin allowlist) must run before the callback reaches SelectBranchList.', 'auth-web /select-branch');
       } finally { await page.close(); }

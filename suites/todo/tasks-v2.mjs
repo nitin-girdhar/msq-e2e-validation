@@ -40,13 +40,13 @@ const need = ['msq_rep1', 'msq_org_admin', 'msq_tenant_admin', 'sales_representa
 for (const k of need) if (!fs.existsSync(authFile(k))) { console.log(`${k} login required - aborting`); process.exit(0); }
 loadJournal(); restoreAll();
 
-const EM = { rep: 'hr@msquareprofessionals.in', oa: 'org-admin@msquareprofessionals.in', ta: 'admin@msquareprofessionals.in' };
+const EM = { rep: 'employee.msq@e2e-fixture.test', oa: 'org-admin@msq.in', ta: 'admin@msq.in' };
 const uid = (e) => scalar(`SELECT id FROM iam.users WHERE email=${lit(e)}`);
 const ID = { rep: uid(EM.rep), oa: uid(EM.oa), ta: uid(EM.ta) };
 const ORG = scalar(`SELECT org_id FROM iam.users WHERE id=${lit(ID.oa)}`);
 const TB = scalar(`SELECT tenant_id FROM entity.organizations WHERE id=${lit(ORG)}`);
-const KSH = scalar(`SELECT id FROM entity.organizations WHERE tenant_id=${lit(TB)} AND id<>${lit(ORG)} AND NOT is_deleted AND name LIKE '%KSH%' LIMIT 1`);
-const KSH_USER = scalar(`SELECT u.id FROM iam.users u JOIN iam.user_org_mapping m ON m.user_id=u.id AND m.is_active WHERE m.org_id=${lit(KSH)} AND u.is_active LIMIT 1`);
+const KSH = scalar(`SELECT id FROM entity.organizations WHERE tenant_id=${lit(TB)} AND id<>${lit(ORG)} AND NOT is_deleted AND name LIKE '%Kinshasa%' LIMIT 1`);
+const KSH_USER = !KSH ? null : scalar(`SELECT u.id FROM iam.users u JOIN iam.user_org_mapping m ON m.user_id=u.id AND m.is_active WHERE m.org_id=${lit(KSH)} AND u.is_active LIMIT 1`);
 const TA_TENANT = tenantIdForOrg('Gurugram - Sector 69');
 const FUSER = scalar(`SELECT id FROM iam.users WHERE email='singhneha6020@gmail.com'`);
 const created = { tasks: [], lists: [] };
@@ -574,7 +574,7 @@ async function uiPass() {
         L('quick-add a task (Enter)', !!qid, { status: resp?.status() ?? null, expected: 'row in task.tasks' });
         if (!qid) fail('high', w.key, 'Quick-add returned without creating a task', 'row persisted', `HTTP ${resp?.status()}`, '', 'TaskQuickAdd.', 'todo-web /tasks');
         await page.getByRole('button', { name: '+ New task' }).click();
-        const dlg = page.locator('[role="dialog"]').first();
+        const dlg = page.locator('[role="dialog"]').filter({ has: page.locator('#new-task-title') }).first();
         const ttl = `${MARK} UI modal ${w.k}`;
         await dlg.locator('#new-task-title').fill(ttl); await dlg.locator('#new-task-desc').fill('=cmd|desc');
         await dlg.locator('#new-task-priority').selectOption('high').catch(() => {});

@@ -54,12 +54,12 @@ for (const k of ['msq_rep1', 'msq_org_admin', 'msq_tenant_admin']) if (!fs.exist
 const HAVE_F = fs.existsSync(authFile('sales_representative'));
 loadJournal(); restoreAll();
 
-const EM = { rep: 'hr@msquareprofessionals.in', oa: 'org-admin@msquareprofessionals.in', ta: 'admin@msquareprofessionals.in' };
+const EM = { rep: 'employee.msq@e2e-fixture.test', oa: 'org-admin@msq.in', ta: 'admin@msq.in' };
 const uid = (e) => scalar(`SELECT id FROM iam.users WHERE email=${lit(e)}`);
 const ID = { rep: uid(EM.rep), oa: uid(EM.oa), ta: uid(EM.ta) };
 const ORG = scalar(`SELECT org_id FROM iam.users WHERE id=${lit(ID.oa)}`);
 const TB = scalar(`SELECT tenant_id FROM entity.organizations WHERE id=${lit(ORG)}`);
-const KSH = scalar(`SELECT id FROM entity.organizations WHERE tenant_id=${lit(TB)} AND id<>${lit(ORG)} AND NOT is_deleted AND name LIKE '%KSH%' LIMIT 1`);
+const KSH = scalar(`SELECT id FROM entity.organizations WHERE tenant_id=${lit(TB)} AND id<>${lit(ORG)} AND NOT is_deleted AND name LIKE '%Kinshasa%' LIMIT 1`);
 const TA_TENANT = tenantIdForOrg('Gurugram - Sector 69');
 const FUSER = scalar(`SELECT id FROM iam.users WHERE email='singhneha6020@gmail.com'`);
 const FORG = scalar(`SELECT org_id FROM iam.users WHERE id=${lit(FUSER)}`);

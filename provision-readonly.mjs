@@ -26,13 +26,14 @@ const targets = [];
 const tA = cfg.roles.find((r) => r.role === 'tenant_admin');
 if (tA) targets.push({ admin: tA.email, org: cfg.tenants.find((t) => t.primary)?.org ?? tA.org, email: 'readonly.fitclass@e2e-fixture.test' });
 const tB = (cfg.crossTenantActors ?? []).find((r) => r.role === 'tenant_admin');
+if (tB) targets.push({ admin: tB.email, org: tB.org, email: 'employee.msq@e2e-fixture.test', role: 'sales_representative', last: 'Employee' });
 if (tB && process.env.E2E_READONLY_TENANT_B === '1') targets.push({ admin: tB.email, org: tB.org, email: 'readonly.msq@e2e-fixture.test' });
 
 let failed = 0;
 for (const t of targets) {
   const orgId = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(t.org)} AND NOT is_deleted LIMIT 1`);
   const tenantId = scalar(`SELECT tenant_id FROM entity.organizations WHERE id=${lit(orgId)}`);
-  const roleId = scalar(`SELECT id FROM iam.user_roles WHERE name='read_only' AND is_active AND (tenant_id=${lit(tenantId)}::uuid OR tenant_id IS NULL)
+  const roleId = scalar(`SELECT id FROM iam.user_roles WHERE name=${lit(t.role ?? 'read_only')} AND is_active AND (tenant_id=${lit(tenantId)}::uuid OR tenant_id IS NULL)
     ORDER BY tenant_id NULLS LAST LIMIT 1`);
   if (!orgId || !roleId) { console.log(`provision-readonly: ${t.email}: org/role not found (org=${orgId} role=${roleId})`); failed++; continue; }
 
@@ -41,7 +42,7 @@ for (const t of targets) {
     const s = await freshLogin(t.admin);
     try {
       const r = await apiPost(s, `${cfg.apps['auth-web']}/api/users`, {
-        first_name: 'E2E', last_name: 'ReadOnly', email: t.email,
+        first_name: 'E2E', last_name: t.last ?? 'ReadOnly', email: t.email,
         org_assignments: [{ org_id: orgId, role_id: roleId }], home_org_id: orgId,
         force_password_change: false, send_email_notification: false,
       });
@@ -54,7 +55,7 @@ for (const t of targets) {
        force_password_change=false, is_active=true, password_changed_at=clock_timestamp() - interval '1 minute'
      WHERE id=${lit(userId)}`);
   const mapped = scalar(`SELECT COUNT(*) FROM iam.user_org_mapping WHERE user_id=${lit(userId)} AND role_id=${lit(roleId)} AND is_active`);
-  console.log(`provision-readonly: ${t.email} ready (id=${userId}, read_only mappings=${mapped})`);
+  console.log(`provision-readonly: ${t.email} ready (id=${userId}, ${t.role ?? 'read_only'} mappings=${mapped})`);
   if (Number(mapped) === 0) failed++;
 }
 // Every harness login -> the dev password (LOCAL DB ONLY, same practice as the

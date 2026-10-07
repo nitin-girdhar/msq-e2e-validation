@@ -149,7 +149,7 @@
     {
       "stateKey": "msq_tenant_admin",
       "role": "tenant_admin",
-      "email": "admin@msquareprofessionals.in",
+      "email": "admin@msq.in",
       "rank": 990,
       "tenant": "MSquare Professionals",
       "org": "Gurugram - Civil Lines"
@@ -157,7 +157,7 @@
     {
       "stateKey": "msq_org_admin",
       "role": "org_admin",
-      "email": "org-admin@msquareprofessionals.in",
+      "email": "org-admin@msq.in",
       "rank": 980,
       "tenant": "MSquare Professionals",
       "org": "Gurugram - Civil Lines"
@@ -165,7 +165,40 @@
     {
       "stateKey": "msq_rep1",
       "role": "sales_representative",
-      "email": "hr@msquareprofessionals.in",
+      "email": "employee.msq@e2e-fixture.test",
+      "rank": 20,
+      "tenant": "MSquare Professionals",
+      "org": "Gurugram - Civil Lines",
+      "_note": "fixture (provision-readonly.mjs): MSquare sales_representative = payslip.view, no payroll.manage"
+    },
+    {
+      "stateKey": "msq_editor",
+      "role": "editor",
+      "email": "dhruvmehar91@gmail.com",
+      "rank": 22,
+      "tenant": "MSquare Professionals",
+      "org": "Gurugram - Civil Lines"
+    },
+    {
+      "stateKey": "msq_content_manager",
+      "role": "content_manager",
+      "email": "giagupta88@gmail.com",
+      "rank": 45,
+      "tenant": "MSquare Professionals",
+      "org": "Gurugram - Civil Lines"
+    },
+    {
+      "stateKey": "msq_cto",
+      "role": "cto",
+      "email": "nitin@msq.in",
+      "rank": 975,
+      "tenant": "MSquare Professionals",
+      "org": "Gurugram - Civil Lines"
+    },
+    {
+      "stateKey": "msq_sd1",
+      "role": "sd_1",
+      "email": "nitinjangra0981@gmail.com",
       "rank": 20,
       "tenant": "MSquare Professionals",
       "org": "Gurugram - Civil Lines"

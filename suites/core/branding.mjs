@@ -145,7 +145,7 @@ async function actorPass(A) {
     grade(rep, { role: A.key, scenario: 'GET /tenant/branding', has: has('admin.branding.view'), status: tg.status, endpoint: '/tenant/branding', evidence: tg.text.slice(0, 200), fixOver: 'getTenantBranding must requireCap(ADMIN_BRANDING_VIEW).', fixUnder: 'Role holds admin.branding.view but the service refused.' });
     if (tg.status === 200) {
       if ((otherKey && tg.text.includes(otherKey)) || tg.text.includes(other)) fail('critical', A.key, 'GET /tenant/branding returned foreign-tenant data', 'own tenant only', 'foreign id/key in body', tg.text.slice(0, 200), 'RLS on tenant_branding.');
-      if (/"key"\s*:\s*"brand\//.test(tg.text)) fail('medium', A.key, 'GET /tenant/branding exposes blob storage keys', 'asset_meta shows content_type/bytes/updated_at only', 'brand/<tenant>/... key present', tg.text.slice(0, 200), 'assetMeta() must never return the storage key.');
+      if (/"key"\s*:\s*"[0-9a-f-]{36}\/branding\//.test(tg.text)) fail('medium', A.key, 'GET /tenant/branding exposes blob storage keys', 'asset_meta shows content_type/bytes/updated_at only', '<tenant>/branding/... key present', tg.text.slice(0, 200), 'assetMeta() must never return the storage key.');
     }
     const termsBefore = rowOf(own)?.terms ?? '{}';
     const tp = await req(a, 'PUT', `${GATEWAY}/tenant/branding`, { data: { terms: { leads: MARK } } });
@@ -372,12 +372,13 @@ async function superAdminFunctional() {
       log({ role: who, action: `upload ${n}`, method: 'POST', endpoint: '/sa/tenants/:id/branding/assets/:slot', status: r.status, verified: r.status === 201, expected: '201' });
       if (r.status !== 201) fail('high', who, `Valid brand asset refused: ${n}`, '201', `HTTP ${r.status}`, r.text.slice(0, 200), 'validateBrandAsset / blob store.');
     }
+    const UPLOADED = ['app_icon', 'favicon', 'logo', 'mark'];
     const assets = JSON.parse(rowOf(TB)?.assets ?? '{}');
     const keyB = pubKey(TB);
     const stored = Object.keys(assets).sort().join(',');
-    log({ role: who, action: 'assets recorded in entity.tenant_branding.assets', method: 'GET', endpoint: 'db', status: 200, verified: stored === 'app_icon,favicon,logo,mark', expected: 'app_icon,favicon,logo,mark' });
-    if (stored !== 'app_icon,favicon,logo,mark') fail('high', who, 'Uploaded assets not recorded', 'four slots', stored, JSON.stringify(assets).slice(0, 200), 'setAssetAsService.');
-    if (Object.values(assets).some((m) => !String(m.key).startsWith(`brand/${TB}/`))) fail('critical', who, 'Asset blob key outside the tenant\'s own prefix', `brand/${TB}/...`, JSON.stringify(Object.values(assets).map((m) => m.key)), '', 'Key must be derived from the tenant id only.');
+    log({ role: who, action: 'assets recorded in entity.tenant_branding.assets', method: 'GET', endpoint: 'db', status: 200, verified: UPLOADED.every((k) => k in assets), expected: 'the four uploaded slots present (other seeded slots may coexist)' });
+    if (!UPLOADED.every((k) => k in assets)) fail('high', who, 'Uploaded assets not recorded', 'the four uploaded slots present', stored, JSON.stringify(assets).slice(0, 200), 'setAssetAsService.');
+    if (Object.values(assets).some((m) => !String(m.key).startsWith(`${TB}/branding/`))) fail('critical', who, 'Asset blob key outside the tenant\'s own prefix', `${TB}/branding/<slot>/...`, JSON.stringify(Object.values(assets).map((m) => m.key)), '', 'Key must be derived from the tenant id only.');
 
     // public serving of the new assets (anonymous)
     const png1 = await req(anonA, 'GET', pubUrl(keyB, '/assets/logo'));

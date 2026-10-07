@@ -106,39 +106,51 @@ try {
   await visit(page, `${APP}/dashboard/capabilities/matrix`);
 
   // Then the target role.
-  const hasTenantSelect = await page.locator('#matrix-role').count().catch(() => 0);
+  const roleGroup = page.getByRole('group', { name: 'Role', exact: true });
+  const hasTenantSelect = await roleGroup.count().catch(() => 0);
   if (!hasTenantSelect) {
     record(TOOL, {
       severity: 'high', role: ADMIN_ROLE, tool: TOOL, page: 'Lookup Admin / capabilities/matrix',
       scenario: 'Open the Capability Matrix screen',
-      expected: 'With the navbar tenant scope set, the role selector (#matrix-role) renders',
-      actual: 'No #matrix-role — the matrix page did not render as expected.',
+      expected: 'With the navbar tenant scope set, the Role chip group renders',
+      actual: 'No Role chip group — the matrix page did not render as expected.',
       evidence: `${APP}/dashboard/capabilities/matrix heading; badRequests=${JSON.stringify(log.badRequests.slice(-4))}`,
       proposedSolution: 'Check app/dashboard/capabilities/matrix/page.tsx and CapabilityMatrixClient render without throwing.',
     });
     throw new Error('matrix page did not render — aborting suite');
   }
 
-  const roleSelect = page.locator('#matrix-role');
-  const roleOptionText = await roleSelect.locator('option').allInnerTexts().catch(() => []);
+  // Redesigned screen: Department chips -> Role chips -> Tools / Modules / Operations drilldown.
+  const roleOptionText = await roleGroup.getByRole('button').allInnerTexts().catch(() => []);
   const targetOption = roleOptionText.find((t) => t.toLowerCase().includes('sales representative'));
   console.log(`  role options sample: ${roleOptionText.slice(0, 5).join(' | ')}`);
   if (!targetOption) {
     record(TOOL, {
       severity: 'medium', role: ADMIN_ROLE, tool: TOOL, page: 'Lookup Admin / capabilities/matrix',
-      scenario: "Read the role dropdown after choosing a tenant",
-      expected: `"${TARGET_ROLE}" ("Sales Representative") appears as an option`,
+      scenario: 'Read the role chips after opening the matrix under a tenant scope',
+      expected: `"${TARGET_ROLE}" ("Sales Representative") appears as a role chip`,
       actual: `Not found among: ${roleOptionText.join(', ')}`,
-      evidence: `${APP}/dashboard/capabilities/matrix?tenant_id=${tenantId}`,
+      evidence: `${APP}/dashboard/capabilities/matrix (tenant ${tenantId})`,
       proposedSolution: 'Check lookupAdmin.list("user-roles") returns global anchor roles regardless of tenant.',
     });
     throw new Error('target role not offered — aborting suite');
   }
-  await roleSelect.selectOption({ label: targetOption }).catch(() => {});
-  await page.waitForTimeout(1000);
+  // Pick the role, then drill Tools -> Modules until the capability's operation row is on screen.
+  const openCap = async () => {
+    await roleGroup.getByRole('button', { name: /sales representative/i }).first().click({ timeout: 5000 });
+    await page.waitForTimeout(600);
+    const parts = CAP_KEY.split('.');
+    const pick = async (key) => {
+      const btn = page.locator('li').filter({ has: page.locator('span.font-mono', { hasText: new RegExp('^' + key.replace(/./g, '\.') + '$') }) }).locator('button[aria-current]').first();
+      if (await btn.count()) { await btn.click({ timeout: 4000 }); await page.waitForTimeout(300); }
+    };
+    await pick(parts[0]);
+    for (let i = 2; i < parts.length; i++) await pick(parts.slice(0, i).join('.'));
+    return page.locator('li').filter({ hasText: CAP_KEY }).filter({ has: page.getByRole('button', { name: /^Grant / }) }).first();
+  };
 
   // Locate the capability row by its key text and read the checkbox baseline.
-  const row = page.locator('li', { hasText: CAP_KEY }).first();
+  const row = await openCap();
   const rowFound = await row.count().catch(() => 0);
   console.log(`  capability row for '${CAP_KEY}' found=${rowFound > 0}`);
   if (!rowFound) {
@@ -152,12 +164,14 @@ try {
     });
     throw new Error('capability row not found — aborting suite');
   }
-  const checkbox = row.locator('input[type="checkbox"]');
-  const checkedBefore = await checkbox.isChecked().catch(() => null);
+  const grantBtn = row.getByRole('button', { name: /^Grant / });
+  const denyBtn = row.getByRole('button', { name: /^Deny / });
+  const checkedBefore = (await grantBtn.getAttribute('aria-pressed').catch(() => null)) === 'true';
   console.log(`  UI checkbox before=${checkedBefore} (resolver said ${grantedBefore})`);
 
   // ---------- toggle + save through the real UI ----------
-  await checkbox.click({ timeout: 4000 });
+  await (checkedBefore ? denyBtn : grantBtn).click({ timeout: 4000 });
+  await page.getByRole('button', { name: /review & save changes/i }).click({ timeout: 4000 });
   const saveBtn = page.getByRole('button', { name: /save \d+ change/i });
   const [putResp] = await Promise.all([
     page.waitForResponse((r) => /\/api\/roles\/.+\/capabilities/.test(r.url()) && r.request().method() === 'PUT', { timeout: 10000 }).catch(() => null),
@@ -215,9 +229,8 @@ try {
 
   // ---------- UI reflects the saved state after reload ----------
   await visit(page, `${APP}/dashboard/capabilities/matrix?tenant_id=${tenantId}`);
-  await roleSelect.selectOption({ label: targetOption }).catch(() => {});
-  await page.waitForTimeout(1000);
-  const checkedAfterReload = await page.locator('li', { hasText: CAP_KEY }).first().locator('input[type="checkbox"]').isChecked().catch(() => null);
+  const rowAfter = await openCap();
+  const checkedAfterReload = (await rowAfter.getByRole('button', { name: /^Grant / }).getAttribute('aria-pressed').catch(() => null)) === 'true';
   console.log(`  UI checkbox after reload=${checkedAfterReload} (want ${wantGranted})`);
   if (checkedAfterReload !== wantGranted) {
     record(TOOL, {
