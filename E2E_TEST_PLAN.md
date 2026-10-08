@@ -414,3 +414,15 @@ high-value — it belongs in the smoke/decisive path.
 > be executing those in next session"). First run should go through
 > `preflight.mjs` first in case the new `admin-web` app isn't up on port 3004
 > in the target environment yet.
+
+## 1.76.0 — capability walls (2026-10-08)
+
+| Suite | What it pins |
+|---|---|
+| `suites/capability/capability-walls.mjs` | Removed routes stay 404 for all logins; seven reads match each role's own capabilities (no over-permitted, no under-permitted). |
+| `suites/data/data-health.mjs` CAPW-1…4 | New/removed capability keys; neutral cutover (no sub-980 role gained a rank-blocked capability, analytics.org.view, unassigned.view and the History ladder still equal the old rank rule). |
+| `suites/capability/apiclients-fresh-revoke.mjs` | Re-pointed to `tenant_admin` (it was silently aborting for `org_admin`). |
+
+Edited for the merged/removed keys: `hr/_leave-kit.mjs` (REJECT -> `hr.leave.approve`), `todo/task-soft-delete.mjs`, `todo/tasks-v2.mjs`, `ui/ui-write-roundtrip.mjs`.
+
+**Known harness drift, not caused by 1.76.0:** `hr/hr-admin-matrix.mjs` and `hr/hr-people-role-matrix.mjs` POST holidays without `calendar_id` (422) so their "HR admin may create" half grades under-permitted; the 403s for everyone else are correct. **Not run in this pass:** every browser/UI suite (the Next apps were not built), `rerun.mjs` bands and `run-all.mjs`.

@@ -245,7 +245,7 @@ for (const cta of attackers) {
       report.writes++;
       const changed = before !== after;
       const status = res.status;
-      const ids = leakedIds(res.body);
+      const sent = JSON.stringify([w.path, w.body ?? null]); /* an id the caller itself sent is not a disclosure */ const ids = leakedIds(res.body).filter((i) => !sent.includes(i));
       console.log(`  write ${w.label.padEnd(44)} http=${status} ${changed ? 'ROW CHANGED' : 'unchanged'}${ids.length ? ' LEAK' : ''}`);
       if (changed) {
         const restored = w.restore ? restoreRow(w.restore.table, w.restore.pk, w.restore.id, before) : false;

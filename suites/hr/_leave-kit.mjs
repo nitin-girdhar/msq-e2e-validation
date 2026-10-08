@@ -28,7 +28,7 @@ export const emailOfKey = (key) => roleMeta(key)?.email ?? CROSS_TENANT.find((a)
 
 export const CAP = {
   VIEW: 'hr.leave.view', CREATE: 'hr.leave.request.create', CANCEL: 'hr.leave.request.cancel',
-  APPROVE: 'hr.leave.approve', REJECT: 'hr.leave.reject', ADMIN: 'hr.leave.admin',
+  APPROVE: 'hr.leave.approve', REJECT: 'hr.leave.approve' /* merged into approve in 1.76.0 */, ADMIN: 'hr.leave.admin',
   CO_REQ: 'hr.leave.comp_off.request', CO_APP: 'hr.leave.comp_off.approve',
   EN_REQ: 'hr.leave.encashment.request', EN_APP: 'hr.leave.encashment.approve',
 };

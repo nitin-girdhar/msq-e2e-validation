@@ -352,7 +352,7 @@ try {
     if (sess.orgName) a.org = sess.orgName;
     console.log(`\n── ${a.key} (${caps.size} caps)`);
     const steps = [
-      ['lms', () => s1(a, hasAny(caps, ['lms.leads.edit', 'lms.leads.edit.own', 'lms.leads.edit.team', 'lms.leads.edit.any']))],
+      ['lms', () => s1(a, hasAny(caps, ['lms.leads.edit']))],
       ['hr', () => s2(a, caps.has('hr.leave.request.create'), i)],
       ['todo', () => s3(a, caps.has('tasks.create'))],
       ['admin', () => s4(a, caps.has('admin.team.manage'))],

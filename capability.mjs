@@ -58,7 +58,7 @@ export function capabilityId(key) {
 // roles are tenant-scoped, so prefer the tenant's row when one exists.
 export function roleId(roleName, tenantId) {
   return scalar(
-    `SELECT id FROM iam.user_roles WHERE name=${lit(roleName)}
+    `SELECT id FROM iam.user_roles WHERE name=${lit(roleName)} AND is_active
        AND (tenant_id IS NULL OR tenant_id=${lit(tenantId)}::uuid)
      ORDER BY (tenant_id IS NOT NULL) DESC LIMIT 1`
   );

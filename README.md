@@ -41,7 +41,7 @@ msq-e2e-validation/
 │  ├─ admin/            # admin-web + /sa console, Team contracts
 │  ├─ platform/         # web push + notifications stream
 │  ├─ tenant/           # cross-tenant isolation
-│  ├─ capability/       # capability toggles
+│  ├─ capability/       # capability toggles + capability-walls (1.76.0: closed routes, gated reads)
 │  └─ concurrency/      # multi-user conflict scenarios
 └─ results/             # findings-<tool>.json, <tool>-coverage.json, SUMMARY.md
 ```
@@ -248,6 +248,26 @@ denied everything (or a suite that never logged in) would look like perfect
 isolation. Preflight backs this up by failing if a tenant-B login is missing or
 if both configured tenants resolve to the same tenant id — otherwise the
 security check could return a false all-clear.
+
+### Capability walls (schema 1.76.0) — `suites/capability/capability-walls.mjs`
+
+Read-only, so it runs before the toggling suites and needs no restore. `npm run capability:walls`.
+
+1. **Closed routes.** `POST /meta/crm-event`, `POST /communications/{email,send,whatsapp/text,whatsapp/template}` and
+   `GET /users/team` were removed from the gateway because the audit found them open to any logged-in user (the first
+   was cross-tenant). Every stored login, super_admin included, must get **404** — never a 2xx, never a 5xx.
+2. **Gated reads, every role.** `GET /users/:id` (a colleague in the role's *own* branch — RLS hides other branches, so a
+   shared colleague would read as a false denial), `/users/org-chart`, `/users/assignment-weights`,
+   `/hr/attendance/rules`, `/hr/attendance/rules/admin`, `/api-clients` and `/meta/integration` are graded against each
+   role's own `/auth/me` capability list (`matrix.mjs`): OVER-PERMITTED is a privilege escalation (critical),
+   under-permitted a broken feature.
+
+`suites/data/data-health.mjs` gained **CAPW-1…4** (catalogue shape; roles below the old rank-980 floor holding a capability it
+blocked; cross-branch analytics; unassigned-lead and Leads-History reach vs. the pre-1.76.0 rank rule) and two back-fill pins for
+CAP-5. CAPW-2…4 are `info`: a row there means someone delegated on purpose *or* a grant drifted — read it, don't assume.
+
+Gotcha worth knowing: `apiclients-fresh-revoke.mjs` now tests `tenant_admin` — `org_admin` never held `admin.api_tokens.*` in the
+seeded tenants, so the old target self-aborted at its baseline check (exit 0, no findings) and tested nothing.
 
 ### Capability toggling (`capability.mjs` + `suites/capability/`)
 

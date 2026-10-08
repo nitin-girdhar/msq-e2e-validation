@@ -125,6 +125,8 @@ const STAGES = [
   // Authorization / entitlement config toggles — reversible, journalled, late:
   // everything that assumes baseline grants has already run.
   { tag: 'auth', script: 'auth-refresh.mjs', always: true },
+  // 1.76.0 capability walls: read-only, so it runs before the toggles that reshape grants.
+  { tag: 'capability', script: 'suites/capability/capability-walls.mjs' },
   { tag: 'capability', script: 'suites/capability/capability-toggle.mjs' },
   { tag: 'capability', script: 'suites/admin/capability-matrix-ui.mjs' },
   { tag: 'capability', script: 'suites/admin/sa-console.mjs' },

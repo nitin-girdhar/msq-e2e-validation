@@ -101,7 +101,7 @@ async function main() {
   await open();
   // ── the cross-tenant actor needs tasks.* to be a meaningful attacker ───────
   if (HAVE_F) {
-    for (const k of ['tasks', 'tasks.view', 'tasks.view.own', 'tasks.create', 'tasks.edit', 'tasks.edit.own', 'tasks.delete', 'tasks.comment', 'tasks.history.view', 'tasks.lists', 'tasks.lists.view', 'tasks.lists.manage', 'tasks.lists.delete']) {
+    for (const k of ['tasks', 'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete', 'tasks.comment', 'tasks.history.view', 'tasks.lists', 'tasks.lists.view', 'tasks.lists.manage', 'tasks.lists.delete']) {
       try { setOverride(TA_TENANT, 'sales_representative', k, true); } catch (e) { console.log(`  (override ${k}: ${String(e.message).slice(0, 60)})`); }
     }
     const fw = await waitForSessionCapability(A.f, 'tasks.delete', true, { timeoutMs: 20000 });
@@ -263,7 +263,7 @@ async function main() {
     if (!(isOk(r2.status) && dbT(R3.id)?.del === 'true')) fail('medium', 'rep', 'Delete does not work after the capability was granted back', '2xx', `HTTP ${r2.status}`, r2.text.slice(0, 160), 'Capability cache invalidation.');
     // tasks.delete without tasks.view/edit does not matter; restore to the tenant default (override removed)
     restoreAll();
-    if (HAVE_F) for (const k of ['tasks', 'tasks.view', 'tasks.view.own', 'tasks.create', 'tasks.edit', 'tasks.edit.own', 'tasks.delete', 'tasks.comment', 'tasks.history.view', 'tasks.lists', 'tasks.lists.view', 'tasks.lists.manage', 'tasks.lists.delete']) { try { setOverride(TA_TENANT, 'sales_representative', k, true); } catch {} }
+    if (HAVE_F) for (const k of ['tasks', 'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete', 'tasks.comment', 'tasks.history.view', 'tasks.lists', 'tasks.lists.view', 'tasks.lists.manage', 'tasks.lists.delete']) { try { setOverride(TA_TENANT, 'sales_representative', k, true); } catch {} }
   }
 
   // ── D7 races ──────────────────────────────────────────────────────────────

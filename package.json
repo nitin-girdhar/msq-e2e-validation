@@ -33,6 +33,7 @@
     "report": "node report.mjs",
     "all": "node run-all.mjs",
     "capability": "node suites/capability/capability-toggle.mjs",
+    "capability:walls": "node suites/capability/capability-walls.mjs",
     "capability:restore": "node suites/capability/capability-toggle.mjs --restore-only",
     "reg:issue1": "node suites/admin/create-user-rls-regression.mjs",
     "reg:issue2": "node suites/capability/apiclients-fresh-revoke.mjs",

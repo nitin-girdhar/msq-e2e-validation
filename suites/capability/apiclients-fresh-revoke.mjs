@@ -31,7 +31,7 @@ import { dbReachable } from '../../db.mjs';
 import { tenantIdForOrg, resolvedCapabilities, setOverride, restoreAll, pendingOverrides } from '../../capability.mjs';
 
 const TOOL = 'capability';
-const ROLE = 'org_admin';
+const ROLE = 'tenant_admin'; // org_admin does not hold admin.api_tokens.* in the seeded tenants, so it would self-abort at the baseline check
 const CAP = 'admin.api_tokens.view';
 const URL = `${cfg.gateway}/api-clients`;
 

@@ -25,6 +25,8 @@ if (!dbReachable()) { console.log('DB not reachable — aborting'); process.exit
 const stamp = Date.now();
 const orgId = scalar(`SELECT id FROM entity.organizations WHERE name=${lit(roleMeta('org_admin').org)} LIMIT 1`);
 const year = new Date().getFullYear();
+// Holidays belong to a CALENDAR (org + year); POST /hr/holidays requires calendar_id (422 without it).
+const calendarId = scalar(`SELECT id FROM hr.holiday_calendars WHERE org_id=${lit(orgId)} AND year=${year} AND NOT is_deleted ORDER BY created_at LIMIT 1`);
 
 // ── 1. HOLIDAYS — create (HR_LEAVE_ADMIN_HOLIDAYS_MANAGE) ──────────────────
 console.log('— create holiday (HR admin, rank >= 75) —');
@@ -36,6 +38,7 @@ await runRoleMatrix({
     // spread dates so unique (org, date) constraints don't collide between roles
     holiday_date: new Date(Date.UTC(year, 11, 1 + (Math.abs(hash(role)) % 20))).toISOString().slice(0, 10),
     org_id: orgId,
+    ...(calendarId ? { calendar_id: calendarId } : {}),
   }),
   verify: (role) => Number(scalar(
     `SELECT COUNT(*) FROM hr.holidays WHERE name=${lit(`E2E-holiday-${role}-${stamp}`)}`

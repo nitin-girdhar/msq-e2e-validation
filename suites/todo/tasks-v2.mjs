@@ -93,7 +93,7 @@ function parseCsv(text) {
 async function main() {
   await open();
   // ── grant the cross-tenant actor tasks.* (journalled tenant overrides) ────
-  const FCAPS = ['tasks', 'tasks.view', 'tasks.view.own', 'tasks.create', 'tasks.edit', 'tasks.edit.own', 'tasks.bulk', 'tasks.export', 'tasks.assign', 'tasks.lists', 'tasks.lists.view'];
+  const FCAPS = ['tasks', 'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.bulk', 'tasks.export', 'tasks.assign', 'tasks.lists', 'tasks.lists.view'];
   for (const k of FCAPS) { try { setOverride(TA_TENANT, 'sales_representative', k, true); } catch (e) { console.log(`  (override ${k}: ${String(e.message).slice(0, 60)})`); } }
   const fw = await waitForSessionCapability(A.f, 'tasks.bulk', true, { timeoutMs: 20000 });
   console.log(`cross-tenant actor tasks.bulk effective: ${fw.ok} (${fw.ms} ms)`);

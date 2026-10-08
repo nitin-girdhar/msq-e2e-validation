@@ -422,12 +422,12 @@ check('CAP-3', 'New capabilities missing, inactive, or hanging off an inactive p
   describe: (r) => `${r.key}: ${r.problem}`,
   fix: 'Apply reference_data/02_capabilities.sql (idempotent upsert) and the matching one_time/apply_*_capabilit*.sql.',
 });
-check('CAP-4', 'Retired hr.attendance.admin.reports keys still active (1.56.0)', {
-  sql: `SELECT key FROM iam.capabilities WHERE key IN ('hr.attendance.admin.reports','hr.attendance.admin.reports.view') AND is_active`,
+check('CAP-4', 'Retired hr.attendance.admin.reports keys still present (deactivated 1.56.0, deleted 1.76.0)', {
+  sql: `SELECT key FROM iam.capabilities WHERE key IN ('hr.attendance.admin.reports','hr.attendance.admin.reports.view')`,
   cols: ['key'], severity: 'medium',
-  expected: 'The attendance-reports tab keys are DEACTIVATED (reports moved to the hr.reports tool) — an active retired node shows a dead tab in the Capability Matrix',
+  expected: 'The attendance-reports tab keys are gone (reports moved to the hr.reports tool in 1.56.0; the rows were deleted in 1.76.0)',
   describe: (r) => r.key,
-  fix: 'Run one_time/apply_hr_reports_capability.sql.',
+  fix: 'Run one_time/apply_capability_walls.sql (1.76.0).',
 });
 // Back-fill pins (reference_data/03_roles_and_grants.sql): every EFFECTIVE holder of the source
 // key got the target key, DO NOTHING on conflict — so the only legitimate gap is an explicit
@@ -447,6 +447,8 @@ const PINS = [
   ['hr.attendance.view', 'hr.attendance.roster.view'], ['hr.attendance.punch', 'hr.attendance.swap.request'],
   ['hr.attendance.regularization.approve', 'hr.attendance.swap.approve'],
   ['hr.attendance.admin.assignments.manage', 'hr.attendance.admin.override'], ['hr.attendance.admin.assignments.manage', 'hr.attendance.roster.manage'],
+  // 1.76.0 (capability walls)
+  ['lms.leads.view', 'lms.leads.export'], ['hr.employees.profile360.view', 'hr.employees.statutory.view'],
 ];
 const pinSql = `(VALUES ${PINS.map(([s, t]) => `(${lit(s)},${lit(t)})`).join(',')}) pin(src,tgt)`;
 const tenantRoles = `SELECT t.id AS tenant_id, r.name AS role_name, r.id AS role_id FROM entity.tenants t
@@ -749,6 +751,76 @@ check('META-10', 'Lead-pull runs stuck in a working state > 30 min (heartbeat st
   expected: 'Working runs heartbeat; a dead worker leaves the run forever "running" and blocks the next pull',
   describe: (r) => `${r.run} ${r.status}, last beat ${r.lastBeat}`,
   fix: 'Check the meta-conversion-api worker; mark the run failed (service action).',
+});
+
+
+// ── Capability walls (1.76.0) ────────────────────────────────────────────────
+// The cutover was BEHAVIOUR-NEUTRAL: where a rank/role gate became a capability the migration wrote
+// the grant that reproduces the old access. These checks pin that shape so a later edit that
+// quietly re-opens something (or leaves a dead key behind) is found.
+const WALLS_NEW = ['lms.leads.export', 'hr.employees.statutory.view', 'hr.leave.admin.tenant_wide', 'hr.attendance.admin.tenant_wide', 'admin.api_tokens.tenant_wide'];
+const WALLS_GONE = ['lms.dashboard', 'lms.dashboard.view', 'lms.leads.edit.own', 'lms.leads.edit.team', 'lms.leads.edit.any', 'lms.history.detail.view', 'lms.history.view.team',
+  'tasks.view.own', 'tasks.edit.own', 'tasks.edit.team', 'hr.attendance.view.own', 'hr.attendance.view.org', 'hr.leave.view.own', 'hr.leave.view.team',
+  'hr.leave.admin.holidays.view', 'hr.leave.reject', 'hr.attendance.regularization.reject'];
+check('CAPW-1', 'Capability catalogue does not match 1.76.0 (new keys missing / removed keys back)', {
+  sql: `SELECT k.key, 'new key missing, inactive or without an active parent' FROM (VALUES ${asValues(WALLS_NEW)}) k(key)
+          LEFT JOIN iam.capabilities c ON c.key=k.key LEFT JOIN iam.capabilities p ON p.key=c.parent_key
+         WHERE c.id IS NULL OR NOT c.is_active OR p.id IS NULL OR NOT p.is_active
+        UNION ALL
+        SELECT c.key, 'removed key is back in the catalogue' FROM iam.capabilities c WHERE c.key IN (${WALLS_GONE.map(lit).join(',')})`,
+  cols: ['key', 'problem'], severity: 'high',
+  expected: 'The five 1.76.0 operations exist under an active parent; the keys nothing reads (and the merged *.reject twins) are gone',
+  describe: (r) => `${r.key}: ${r.problem}`,
+  fix: 'Re-apply one_time/apply_capability_walls.sql; if a removed key reappeared, someone re-seeded an old 02_capabilities.sql.',
+});
+// Roles BELOW the old rank-980 floor that effectively hold a capability the rank floor used to block.
+check('CAPW-2', 'Roles below rank 980 hold a capability the old rank floor blocked (lead delete, campaign writes, API tokens, tenant-wide keys)', {
+  sql: `SELECT DISTINCT tr.tenant_id, tr.role_name, ur.rank, m.capability_key
+          FROM (${tenantRoles}) tr JOIN iam.user_roles ur ON ur.id=tr.role_id
+          JOIN LATERAL iam.fn_role_capability_matrix(tr.tenant_id) m ON m.role_name=tr.role_name AND m.granted
+           AND m.capability_key IN ('lms.leads.delete','lms.campaigns.manage','admin.api_tokens.view','admin.api_tokens.manage',
+                                    'admin.api_tokens.tenant_wide','hr.leave.admin.tenant_wide','hr.attendance.admin.tenant_wide')
+         WHERE ur.rank < 980 AND tr.role_name <> 'super_admin' AND ${roleHeldIn('tr')}`,
+  cols: ['tenant', 'role', 'rank', 'key'], severity: 'info', max: 40,
+  expected: 'After 1.76.0 these were denied for sub-980 roles so removing the rank floor widened nobody. A row here means someone granted it since — confirm that was deliberate',
+  describe: (r) => `${r.role} (rank ${r.rank}) @${String(r.tenant).slice(0, 8)} holds ${r.key}`,
+  fix: 'Intentional delegation: nothing to do. Otherwise untick it on the Capability Matrix.',
+});
+// Cross-branch analytics was tenant_admin / super_admin only.
+check('CAPW-3', 'lms.analytics.org.view held by a role other than tenant_admin / super_admin', {
+  sql: `SELECT DISTINCT tr.tenant_id, tr.role_name FROM (${tenantRoles}) tr
+          JOIN LATERAL iam.fn_role_capability_matrix(tr.tenant_id) m ON m.role_name=tr.role_name AND m.granted AND m.capability_key='lms.analytics.org.view'
+         WHERE tr.role_name NOT IN ('tenant_admin','super_admin') AND ${roleHeldIn('tr')}`,
+  cols: ['tenant', 'role'], severity: 'info',
+  expected: 'Only tenant_admin / super_admin see every branch in Analytics (the pre-1.76.0 role test); anyone else was granted it afterwards',
+  describe: (r) => `${r.role} @${String(r.tenant).slice(0, 8)}`,
+  fix: 'Intentional delegation: nothing to do. Otherwise untick lms.analytics.org.view.',
+});
+// Unassigned queue was rank >= 40; the history ladder was super_admin all / tenant_admin tenant / rank >= 40 org / else own.
+check('CAPW-4', 'Unassigned-lead and Leads-History reach differ from the pre-1.76.0 rank rule', {
+  sql: `WITH eff AS (
+          SELECT tr.tenant_id, tr.role_name, ur.rank,
+                 bool_or(m.granted) FILTER (WHERE m.capability_key='lms.leads') AS has_leads,
+                 bool_or(m.granted) FILTER (WHERE m.capability_key='lms.leads.unassigned.view') AS un,
+                 bool_or(m.granted) FILTER (WHERE m.capability_key='lms.history.view') AS has_hist,
+                 bool_or(m.granted) FILTER (WHERE m.capability_key='lms.history.view.org') AS r_org,
+                 bool_or(m.granted) FILTER (WHERE m.capability_key='lms.history.view.tenant') AS r_ten,
+                 bool_or(m.granted) FILTER (WHERE m.capability_key='lms.history.view.all') AS r_all
+            FROM (${tenantRoles}) tr JOIN iam.user_roles ur ON ur.id=tr.role_id
+            JOIN LATERAL iam.fn_role_capability_matrix(tr.tenant_id) m ON m.role_name=tr.role_name
+           WHERE ${roleHeldIn('tr')} GROUP BY 1,2,3)
+        SELECT tenant_id, role_name, rank,
+               CASE WHEN has_leads AND COALESCE(un,false) <> (rank >= 40) THEN 'unassigned.view='||COALESCE(un,false)||' but rank '||rank
+                    ELSE 'history rung '||CASE WHEN r_all THEN 'all' WHEN r_ten THEN 'tenant' WHEN r_org THEN 'org' ELSE 'own' END||' != expected '||
+                         CASE WHEN role_name='super_admin' THEN 'all' WHEN role_name='tenant_admin' THEN 'tenant' WHEN rank>=40 THEN 'org' ELSE 'own' END END
+          FROM eff
+         WHERE (has_leads AND COALESCE(un,false) <> (rank >= 40))
+            OR (has_hist AND (CASE WHEN COALESCE(r_all,false) THEN 'all' WHEN COALESCE(r_ten,false) THEN 'tenant' WHEN COALESCE(r_org,false) THEN 'org' ELSE 'own' END)
+                 <> (CASE WHEN role_name='super_admin' THEN 'all' WHEN role_name='tenant_admin' THEN 'tenant' WHEN rank>=40 THEN 'org' ELSE 'own' END))`,
+  cols: ['tenant', 'role', 'rank', 'difference'], severity: 'info', max: 40,
+  expected: 'Unassigned leads follow rank >= 40 and History reaches super_admin all / tenant_admin tenant / rank >= 40 org / else own — exactly what the migration wrote. A difference is a grant someone edited since',
+  describe: (r) => `${r.role} (rank ${r.rank}) @${String(r.tenant).slice(0, 8)}: ${r.difference}`,
+  fix: 'Intentional: nothing to do. Otherwise correct the grant on the Capability Matrix.',
 });
 
 // ── Harness residue ──────────────────────────────────────────────────────────
