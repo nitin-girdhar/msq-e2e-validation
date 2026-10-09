@@ -406,7 +406,7 @@ try {
     if (!uiOk || !canNow) fail('high', U3.email, 'UI password reset round trip failed', 'success state + new password works', `${body.slice(0, 120).replace(/\n/g, ' ')} login=${canNow}`, '', 'ResetPasswordForm / reset API.', 'auth-web /reset-password');
     // the used link now reads invalid in the UI
     await page.goto(`${AUTH}/reset-password?token=${TUI}`, { waitUntil: 'domcontentloaded' }); await settle();
-    await page.locator('#new-pw').fill(pw('again')); await page.locator('#confirm-pw').fill(pw('again'));
+    const again = pw('again'); await page.locator('#new-pw').fill(again); await page.locator('#confirm-pw').fill(again);
     await page.getByRole('button', { name: /set new password/i }).click(); await page.waitForTimeout(1500);
     body = await text();
     if (!/invalid|expired/i.test(body)) fail('high', 'anonymous', 'A spent link can be reused from the UI', 'invalid or expired', body.slice(0, 120), '', '', 'auth-web /reset-password');

@@ -1,5 +1,6 @@
 node_modules/
 .auth/
 results/
+results-*.log
 test-results/
 playwright-report/

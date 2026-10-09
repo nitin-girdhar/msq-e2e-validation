@@ -356,6 +356,22 @@ async function main() {
   const dAssign = await bulk(A.rep, { ids: [R1.id], assignee_id: ID.ta });
   const repAssign = caps.rep?.has('tasks.assign');
   grade(rep_, { role: 'rep', scenario: 'bulk reassign to a colleague without tasks.assign', has: !!repAssign, status: dAssign.status, effect: null, method: 'POST', endpoint: '/tasks/bulk', evidence: dAssign.text.slice(0, 120) });
+  // Same rule on the single-task routes: handing a task to a colleague needs tasks.assign whatever
+  // endpoint does it; keeping or taking a task yourself does not.
+  const sCreate = await mkTask(A.rep, { title: `${MARK} assign-on-create`, assignee_id: ID.ta, priority_name: 'low' });
+  grade(rep_, { role: 'rep', scenario: 'create a task assigned to a colleague without tasks.assign', has: !!repAssign, status: sCreate.r.status, effect: !!sCreate.id, method: 'POST', endpoint: '/tasks', evidence: sCreate.r.text.slice(0, 120) });
+  const beforeAssignee = dbTask(R1.id)?.assignee;
+  const sPatch = await req(A.rep, 'PATCH', `${T}/tasks/${R1.id}`, { data: { assignee_id: ID.ta } });
+  grade(rep_, { role: 'rep', scenario: 'edit a task to hand it to a colleague without tasks.assign', has: !!repAssign, status: sPatch.status, effect: null, method: 'PATCH', endpoint: '/tasks/:id', evidence: sPatch.text.slice(0, 120) });
+  if (!repAssign) {
+    if (dbTask(R1.id)?.assignee !== beforeAssignee) fail('critical', 'rep', 'PATCH reassigned a task without tasks.assign', 'assignee unchanged', `assignee=${dbTask(R1.id)?.assignee}`, R1.id, 'assertCanAssign in updateTask.');
+    // An edit form re-sends the current assignee, and anyone may take a task themselves.
+    const sSame = await req(A.rep, 'PATCH', `${T}/tasks/${R1.id}`, { data: { assignee_id: ID.rep } });
+    log({ role: 'rep', action: 'edit own task re-sending self as assignee (no tasks.assign)', method: 'PATCH', endpoint: '/tasks/:id', status: sSame.status, verified: isOk(sSame.status), expected: '2xx' });
+    if (!isOk(sSame.status)) fail('high', 'rep', 'Edit re-sending the unchanged / own assignee was refused', '2xx', `HTTP ${sSame.status}`, sSame.text.slice(0, 160), 'updateTask must only gate a CHANGE to someone else.');
+  } else if (isOk(sPatch.status)) {
+    await req(A.rep, 'PATCH', `${T}/tasks/${R1.id}`, { data: { assignee_id: ID.rep } });
+  }
   // d2: edit revoked, bulk granted -> 403
   await flip('rep', A.rep, 'sales_representative', 'tasks.edit', false);
   const d2 = await bulk(A.rep, { ids: [R1.id], status_name: 'done' });

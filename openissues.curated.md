@@ -1,5 +1,154 @@
+# Cycle 8 re-validation (2026-10-09, after the Cycle 7 fixes, schema 1.78.0)
 
-# Cycle 6 re-validation (2026-10-06)
+**What ran:** the full `run-all` pass (90 stages) against the **local** stack on **rebuilt images** (hr-service, leads-service, api-gateway, lms-web, admin-web, lookup-admin, then identity-service twice), after applying `one_time/apply_min_rest_hours.sql` (1.77.0) and `one_time/apply_departments_tenant_admin_write.sql` (1.78.0) to the local DB (backup: `db_backups/pre_cycle8_fixes_2026-10-09.dump`). One stage timed out (`admin-web-console`, a lone timeout) and passed on rerun in 924 s. Totals: **1 552 findings: 2 critical, 32 high, 475 medium, 1 027 low, 22 info** (Cycle 7: 1 595 / 2 / 61 / 480 / 1 029 / 23).
+
+A new suite, `suites/regression/cycle7-fixes.mjs`, drives each Cycle 7 fix as the roles that hit it and grades it against the DB. It passed with **0 findings**.
+
+## Status of the Cycle 7 items
+
+| Item | Cycle 7 | Now | Evidence |
+|---|---|---|---|
+| N1 payroll malformed month | High | **FIXED** | publish / lock / unlock x `2020-13`, `abc`, `2020-3-1`, `2020-00` as `hr_admin`, Fitclass `tenant_admin`, MSquare `org_admin`: all 422 (was 500) |
+| N2 remove emergency contact | High | **FIXED** | `msq_rep1` and `tenant_admin`: 204 and `is_deleted` in the DB |
+| R3 `tenant_admin` cannot write `iam.departments` | High | **FIXED** | `tenant_admin`, `super_admin`, `msq_tenant_admin` create (201) and rename a department |
+| R2 class-22 errors give 500 | High | **FIXED** (image was stale) | all four services already carried the translator; rebuilt images no longer 500 |
+| N3 campaign summary tenant-wide | High | **FIXED** (product decision, see below) | `org_admin` sees 1 branch; `tenant_admin` (holds `lms.analytics.org.view`) sees 11 |
+| N5 `PUT /tenants/:id/modules` | Low | **FIXED** | `tenant_admin`, `org_admin`: 403 at the gateway for an invalid and a valid body |
+| N7 reset attempts spend the login budget | Low | **FIXED** | 8 failed resets, then login answers 401, not 429 |
+| N4 hydration #418 | Medium | **PARTLY FIXED** | `LocalDateTime` now on API Tokens, Branding and 5 Meta screens. React #418 still shows on `/hrms/attendance` for `sales_representative` (see "Open") |
+| N6 `tenant_admin` edit lead 403 | High | **FIXED in code, not exercised** | `LeadEditModal` no longer offers follow-up stages (or sends follow-up fields) without `lms.followups.create`; no suite drives it as `tenant_admin` yet |
+| R7 data drift | High | **OPEN (data)** | below |
+
+**Decision to confirm (N3).** Campaign summary is now limited to the caller's own branch unless they hold `lms.analytics.org.view` (the dashboard's rule). `org_manager` currently gets 0 rows. If branch managers should see tenant-wide campaign totals, grant them `lms.analytics.org.view` instead of widening the query.
+
+## New defects found this cycle
+
+### C8-1. My `iam.departments` change dropped the service-login roles: HIGH (found by data-health RLS-1, fixed)
+
+- **Control flow:** `apply_departments_tenant_admin_write.sql` did `DROP POLICY ... tenant_isolation_policy; CREATE POLICY ... TO tenant_admin`. The closing widening block of `08_rls.sql` is what adds the NOINHERIT service logins, and a one-shot does not run it, so the owning service would read zero rows with no error.
+- **Fix (applied):** `ALTER POLICY tenant_isolation_policy ON iam.departments TO tenant_admin, tenant_dash_svc` in the one-shot (same role list as every other tenant policy) and on the local DB.
+
+### C8-2. Two reset links live after back-to-back requests, and the per-user cap is not enforced: HIGH then MEDIUM (fixed)
+
+- **Where:** `identity-service/src/api/v1/auth/auth.repository.ts createResetToken`, `auth.service.ts requestPasswordReset`.
+- **Control flow:** the controller answers before the token write runs, so overlapping requests all pass `countRecentResetRequests` and each retires nothing and inserts a token (2 unused, then 4 rows against a cap of 3).
+- **Fix (applied, rebuilt):** `createResetToken` takes `pg_advisory_xact_lock(hashtextextended(user_id, 0))`, re-checks the cap inside the lock, and returns `false` (no email) at the cap. Verified: 2 live tokens no longer occur; the cap re-check held on the rebuilt image (`auth-recovery` rerun: 0 findings).
+
+### C8-3. `DELETE /api-clients/:id` with a malformed id returns 500: MEDIUM (fixed)
+
+- **Control flow:** `identity-service api-clients.router.ts` had no params schema on `PATCH/DELETE/rotate :id`, so a non-uuid reached Postgres as `22P02` and surfaced as a bare 500 (identity-service has no `translatePgError`).
+- **Fix (applied, rebuilt):** `validate({ params: z.object({ id: z.string().uuid() }) })` on all three routes (422).
+
+## Open, carried forward
+
+- **R7 data items (all local data; need an owner):** `IAM-2` (`root@root.com` mapped to both tenants, confirm intent then exempt `super_admin`), `RLS-5` (`ext.meta_ad_accounts` grants to `lms_svc` / `analytics_svc`, confirm or `REVOKE`), `LMS-1` / `LMS-5` / `W1` (9 licensed branches and 2 branches with active reps have no weighted assignee, set weights in `lms.lead_assignment_weights`), `CAP-5` (re-run the back-fill pinned to effective holders). The three `iam.*_bak_*` tables now have RLS on (RLS-2 closed).
+- **Hydration #418 on `/hrms/attendance`** (`sales_representative`): not root-caused. `MyMonthCalendar.tsx:65` falls back to `new Date().toLocaleDateString('en-CA')` for `today` (server and browser zones differ near midnight); the same pattern is in `TeamRosterShell.tsx:24`, `PunchLog.tsx:44`. The other fixed-locale `en-IN` / `timeZone: 'UTC'` sites are deterministic.
+- **Highs that are harness drift, not product defects:** `attendance monthly summary report` x5 (the suite looks for a stale capability key), `Create a private task` 403 (Tasks is licensed for MSquare, not Fitclass), the HR people-UI and payslip-modal selectors after the Stitch redesign, `Recompute a day` 409 (Oct 2026 payroll is locked by an earlier suite), `A stale browser silently overwrote...` (first save response not captured, unverified).
+
+## Roles, tools and coverage
+
+21 logins from `read_only` (fixture) up to `super_admin` on both tenants (Fitclass ladder and MSquare), across auth-web, admin-web, lookup-admin (SA), lms-web, hr-web and todo-web. Every tab, dropdown and button was opened by the deep crawls; real writes, capability on/off (via the Capability Matrix) and two-user races ran in the role-matrix, capability and concurrency bands. Per-page and per-tab results are in Parts A0 and A below, generated from `results/`.
+
+---
+
+# Cycle 7 re-validation (2026-10-09)
+
+**What ran:** three full `run-all` passes against the **local** stack (docker + Caddy, `app.localhost`), then targeted reruns. The final pass ran against the **rebuilt images carrying the latest repo changes (schema 1.76.0)**. 87 stages, **all clean** after reruns (the HR and Tasks crawls each timed out once and passed on rerun in 1688 s and 460 s). Totals: **1 595 findings: 2 critical, 61 high, 480 medium, 1 029 low, 23 info**. Cycle 6 had 18 critical / 124 high. Most of the remaining highs are harness drift or the open items below, not new product defects.
+
+**Environment.** Docker (Rancher) hit the Hyper-V socket stall about a dozen times during passes 1-2 and fully hung once; the owner restarted Rancher and rebuilt the images. A stall during a stage crashes it or silently skips its DB checks, so every stall-hit stage was rerun in place (`rerun.mjs`).
+
+**Roles and tenants exercised.** 21 logins: `read_only` (fixture) up to `super_admin`; the Fitclass ladder (`tenant_admin`, `org_admin`, `hr_admin`, `org_manager`, `fitness_manager`, `assistant_fitness_manager`, `pre_sales_captain`, `senior_sales_executive`, `fitness_trainer`, `sales_representative`) and the MSquare tenant (`tenant_admin`, `org_admin`, `cto`, `content_manager`, `editor`, `sd_1`, plus a `sales_representative` fixture). Capability on/off was driven through the Capability Matrix UI and by tenant-scoped overrides (journalled and restored).
+
+**Product code changed in this cycle:** none. All edits are in `msq-e2e-validation` and are listed under "Harness corrected this cycle". Every fix below is a proposal.
+
+## Status of the Cycle 6 items (verified live on the rebuilt stack)
+
+| Item | Cycle 6 | Now | How verified |
+|---|---|---|---|
+| R1 leave approval double consumption | Critical | **FIXED** | `uix_leave_ledger_consumption` exists; 0 requests with more than one consumption row; both race suites report nothing at medium or above |
+| R2 class-22 Postgres errors -> 500 | High | **OPEN** | `POST /hr/payroll/admin/abc/lock` -> 500 (see N1, a variant R2's fix would not cover) |
+| R3 `tenant_admin` cannot INSERT `iam.departments` | High | **OPEN** | grants on `iam.departments` for `tenant_admin` are `SELECT` only; `POST /hr/employees/departments` -> 500 for `tenant_admin` and `super_admin` |
+| R4 web-push endpoint SSRF | High | **FIXED** | `169.254.169.254`, `localhost`, `10.0.0.5` all rejected with 422 |
+| R5 `GET /meta/integration` open to every role | Medium | **FIXED** | `read_only` now gets 403; the 18 harness criticals are gone |
+| R6 lead transfer plain `Error` -> 500 | High | **FIXED** | the throw is gone from `leads.repository.ts`; no high or critical transfer findings |
+| R7 local DB drift | High | **PARTLY FIXED** | CAP-3 fixed (`lms.leads.bulk.update` and `lms.followups.bulk.reschedule` now exist). Open: RLS-2, LMS-1/5, CAP-5, IAM-2, RLS-5 (table below) |
+
+## New defects found this cycle
+
+### N1. Payroll publish / lock / unlock with a malformed month returns 500: HIGH
+
+- **Role/where:** any caller holding `hr.reports.payroll.manage` (seen as MSquare `org_admin`). `POST /hr/payroll/admin/:month/{publish,lock,unlock}` with `2020-13`, `abc`, `2020-3-1` -> HTTP 500 `Internal server error` (9 findings).
+- **Control flow:** gateway `server.ts:1385-1395` -> hr-service `payroll.router.ts:86-100`. The preHandler is `[authenticate, manage]` with **no `validate({ params })`** -> `monthParam(request)` -> `payroll.repository.ts` (`publish` ~151, `setLock` ~163) -> `monthStart()` in `lib/payroll/payroll.ts:36-39`, which does `throw new Error('Invalid month: ...')`. A plain `Error` is neither an `AppError` nor a Postgres error, so the error handler (and R2's `translatePgError`) returns a bare 500. The GET routes are protected: they run `validate({ query: payrollMonthQuerySchema })`.
+- **Fix (proposed):** (1) `monthStart` throws `BadRequestError('Month must be YYYY-MM')`; (2) add the same month schema as `validate({ params })` on the three POST routes so the 400 happens before any repository work.
+
+### N2. Removing an emergency contact returns 500 for every employee: HIGH
+
+- **Role/where:** any employee. `DELETE /hr/profile/me/contacts/:id`, the "Remove contact" button in the profile UI, and deleting an already-removed contact.
+- **Control flow:** `profile.repository.ts removeOwnContact` (line 206) runs `withRoleTx`, then `UPDATE hr.emergency_contacts SET is_deleted = TRUE, is_active = FALSE ... WHERE id AND user_id AND NOT is_deleted`. The table's only `app_user` policy, `self_policy` (`db_scripts/08_rls.sql:1474-1476`), has `WITH CHECK (user_id = ... AND NOT is_deleted)`. The UPDATE produces a row with `is_deleted = TRUE`, which **fails its own WITH CHECK**; Postgres raises `new row violates row-level security policy for table "emergency_contacts"` (confirmed in the hr-service log) and it surfaces as a bare 500. Contacts can be added and listed but never removed.
+- **Fix (proposed):** run the soft delete in a service transaction with the caller's `user_id` predicate (the repo's rule for soft delete under RLS), or drop `AND NOT is_deleted` from the `WITH CHECK` only. Audit other `self_policy ... NOT is_deleted` tables that soft-delete through `withRoleTx`.
+
+### N3. Campaign summary returns other branches' rows to branch-scoped roles: HIGH (confirm intent)
+
+- **Role/where:** `org_admin` and `org_manager`. `GET /analytics/dashboard/campaigns` returns rows for 9-10 branches the caller does not cover.
+- **Control flow:** `analytics.controller.ts getCampaignSummary` (line 32) passes only `org_id, user_id` -> `analytics.repository.ts getTenantCampaignSummary` (line 92) hard-codes `role: 'tenant_admin'` in `withRoleTx` and selects `FROM marketing.vw_tenant_campaign_summary WHERE tenant_id = ...`. There is no branch filter and the transaction runs with tenant-wide RLS, so the answer is tenant-wide for every role that passes the capability check. The neighbouring `getPipelineByStage` scopes to `org_id`.
+- **Impact:** inside one tenant only (no cross-tenant leak). A branch manager sees other branches' campaign performance.
+- **Fix (proposed):** resolve `getCoveredOrgIds(ctx)` (as the lead-write paths do) and filter the view by it, or run the query in the caller's own role. If tenant-wide totals are intended for these roles, put them behind a dedicated capability instead of `lms.analytics.view`. Confirm with product first.
+
+### N4. Hydration mismatch (React #418) on API Tokens, Branding and other admin screens: MEDIUM (was "not root-caused")
+
+- **Role/where:** reproduced with Playwright as `tenant_admin` on `/admin/dashboard/api-tokens`: one page error "Minified React error #418" on load.
+- **Control flow:** `components/api-tokens/ApiTokensTable.tsx:178,209` and `components/branding/BrandingSettings.tsx:166` render `new Date(x).toLocaleString()` inside client components that are also server-rendered. The server formats in its own locale and time zone (UTC, en-US); the browser re-renders in the user's, the text differs, and React discards the server HTML for that subtree (console error, flicker).
+- **Fix (proposed):** one shared `<LocalDateTime iso=... />` in `@platform/ui-kit` that renders a fixed-locale string on the server and swaps to the user's locale in a `useEffect`, or a `<time suppressHydrationWarning>`. Replace the remaining `toLocale*String()` call sites.
+
+### N5. `PUT /tenants/:id/modules` reaches the service for non-super-admins: LOW (defence in depth)
+
+- **Where:** gateway `server.ts:588-595` registers the route with `withAuth` (its neighbours use `withSuperAdmin`). admin-service `tenant-modules.router.ts` runs `validate({ params, body })` **before** the controller's `rank < SUPER_ADMIN` check (`tenant-modules.controller.ts:9,16`). A `tenant_admin` with an invalid body gets 422 and with a valid body 403 from the controller. No escalation, but the edge guard is missing.
+- **Fix (proposed):** `{ ...withSuperAdmin }` on both routes; keep the controller check.
+
+### N6. Editing a lead as `tenant_admin` is refused with 403: HIGH (capability / UI mismatch)
+
+- **Role/where:** `tenant_admin` (Fitclass and MSquare), Leads -> Edit lead, change stage and add a note -> 403 `You do not have permission to create follow-ups`; nothing is saved.
+- **Control flow:** the edit form sends the follow-up fields with the stage change; `leads.controller.ts` lines 40, 50 and 160 call `need(CAPABILITY.LMS_FOLLOWUPS_CREATE)`. `iam.fn_role_capability_matrix` shows **every `lms.followups.*` capability is false for `tenant_admin`** while `lms.leads.edit` is true, so the user may open and submit a form the server then rejects as a whole.
+- **Fix (proposed):** grant `lms.followups.*` to `tenant_admin` in the Capability Matrix, or make the form hide the follow-up controls when the session lacks `lms.followups.create`, and split the save so a lead edit without a follow-up never needs that capability.
+
+### N7. Failed password-reset attempts lock the same IP out of login: LOW
+
+- **Role/where:** anonymous. A handful of failed `POST /auth/reset-password` calls from one IP, then `POST /auth/login` from that IP returns 429.
+- **Control flow:** `api-gateway/src/server.ts:101` registers `/auth/reset-password` with `preHandler: [loginRateLimit]`, the same limiter instance (10 requests per 60 s per IP, in-memory, `lib/rate-limit.ts`) that guards login and switch-org. Reset attempts spend the login budget.
+- **Impact:** low. Anyone behind a shared NAT can lock colleagues out of login for a minute by hammering reset with bad tokens.
+- **Fix (proposed):** give reset its own `createRateLimiter` instance (and key it by token prefix plus IP), leaving the login bucket separate.
+
+## R7 (carried forward, still open)
+
+| Check | Evidence now | Fix |
+|---|---|---|
+| RLS-2 (high) | 3 backup tables without RLS: `iam.role_capabilities_bak_20260819`, `iam.role_capabilities_bak_20261008`, `iam.capabilities_bak_20261008` (the last two come from the 1.76.0 capability-walls migration) | drop after the retention window, or enable RLS |
+| LMS-1 / LMS-5 / W1 (high) | 9 licensed branches without a weighted assignee; 2 of 26 branches with active reps have no weighted user, so auto-assign returns null | set weights in `lms.lead_assignment_weights` |
+| CAP-5 (high) | 2 role/tenant pairs hold a back-fill source capability but not its 1.56-1.68 target | re-run the back-fill pinned to effective holders |
+| IAM-2 (critical, **confirm**) | `root@root.com` is mapped to orgs of both tenants. For a platform `super_admin` this is probably intended; the check should exempt `super_admin` | confirm intent, then exempt it in `data-health` or delete the mapping |
+| RLS-5 (critical, **confirm**) | `ext.meta_ad_accounts` is documented root_service-only (`07_grants.sql:786-789`) but live grants include `lms_svc` SELECT/INSERT/UPDATE and `analytics_svc` SELECT. Row access is still denied (RLS on, no policy), so this is defence in depth | confirm whether 1.69.0 intended the grants; if not, `REVOKE` |
+
+## Harness corrected this cycle (not product defects)
+
+| Finding | Cause | Change |
+|---|---|---|
+| preflight: 4 missing logins | `roles.json` listed `@msquareprofessionals.in` users; the DB has `@msq.in` | updated; added `msq_editor`, `msq_content_manager`, `msq_cto`, `msq_sd1`; `msq_rep1` is now a `sales_representative` fixture created by `provision-readonly.mjs` |
+| Payroll, payslip and announcement suites showed "employee can manage payroll" | `msq_rep1` had been the MSquare HR admin account, which holds `hr.reports.payroll.manage` | fixture user above; every suite using `msq_rep1` was rerun |
+| `tasks-v2`, `task-soft-delete` crashed | stale emails; branch name `KSH` (the MSquare branch is `Kinshasa`); `[role="dialog"]` matched the permanent nav drawer first | emails, branch, and a selector that requires `#new-task-title` |
+| `capability-matrix-ui` crashed | `#matrix-role` was removed by the Capability Matrix redesign (department and role chips, tools -> modules -> operations drilldown, Review & Save) | rewritten; **now passes: UI, DB, resolver and live session agree** |
+| `capability.mjs roleId()` | picked the inactive tenant copy of a role, so overrides never reached users (false "PATCH succeeded without tasks.edit") | now filters `is_active` |
+| `auth-screens` aborted | the request interceptor matched `evil.example` inside our own query string and aborted the test's own navigation | match on host; the hostile `callbackUrl` is correctly rejected by `resolveCallback` |
+| `branding` (3 findings) | expected the old `brand/<tenant>/` key and exactly four slots | now `<tenant>/branding/<slot>/...` and the current 13 slots |
+| `leave-apply-v2` | token layout `leave/<org>/<user>/` (now `<tenant>/<org>/<user>/leave/`); the fixture pool lost a request to a 409 overlap | new layout; pool retries and logs refusals |
+| `cross-tenant-new-modules` | counted an id the caller itself sent as a "leak" | ignore ids present in the request |
+| **Branding ownership** (2 highs) | **the ownership split changed on purpose**: `platform-validation/src/branding.ts` gives Super Admin names, words, menu labels and regional formats, and the tenant admin only the theme (`tenantBrandingUpdateSchema` is `.strict()`); the suite still encodes the old split | NOT yet rewritten: update O2/O4 in `branding-ownership.mjs` |
+| `Create a private task` 403 | Tasks is licensed for MSquare, not Fitclass | accepted decision; use an MSquare actor |
+| lead-transfer matrix mediums | `POST /leads/:id/transfer` is now a branch transfer (`target_org_id`, creates a copy); the matrix step tested the removed reassign-to-user contract | step retired (covered by `lead-transfer.mjs`) |
+| `auth-recovery` aborted (3 passes) | the test typed `pw('again')` into both fields, and `pw()` embeds `Date.now()`, so the passwords differed and the form correctly kept its button disabled | one constant for both fields; **suite now passes** |
+
+---
+
+# Carried forward from Cycle 6 (detail for R1-R7)
 
 **What ran:** the full `run-all` pass against the **local** stack (docker + Caddy, `app.localhost`, schema 1.70.0, branch `stitch-redsign`), 87 stages, 2026-10-05 20:30 UTC to 2026-10-06 00:11 UTC. One new suite was built first: `suites/lms/meta-console-1-70-authz.mjs` (the 1.70 Meta console write routes, every role + tenant B: 70/70 refusals, 0 served).
 

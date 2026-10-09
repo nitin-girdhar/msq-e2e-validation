@@ -350,12 +350,44 @@ async function main() {
       else if (nt.status >= 500) fail('high', 'oa', 'Create task in a deleted list 5xx', '4xx', `HTTP ${nt.status}`, nt.text.slice(0, 160), 'assertListUsable -> typed BadRequest.');
       const st = await req(A.oa, 'GET', `${T}/tasks/stats?scope=org&list_id=${LO}`);
       if (st.status >= 500) fail('medium', 'oa', 'stats for a deleted list id 5xx', '200 open=0 or 4xx', `HTTP ${st.status}`, st.text.slice(0, 160), '');
-      // oa (admin) deleting rep-owned private list: observed
+      // A private list exists only for its owner - also for an admin (tasks.edit.any). Deleting it
+      // would detach its tasks and surface them as standalone tasks an admin can read, so update
+      // and delete are a 404 and both the list and its task's list_id stay as they were.
       const LR = await mkList(A.rep, `${MARK}-rep-private`, 'private', ID.rep);
       if (LR) {
-        const ad = await delL(A.oa, LR);
-        log({ role: 'oa', action: 'org admin deletes a rep\'s PRIVATE list (administer path)', method: 'DELETE', endpoint: '/task-lists/:id', status: ad.status, verified: isOk(ad.status) === (dbL(LR)?.del === 'true'), expected: 'status == DB (policy: observed)' });
-        if (isOk(ad.status) !== (dbL(LR)?.del === 'true')) fail('critical', 'oa', 'List delete response and DB disagree', 'agree', `HTTP ${ad.status}, is_deleted=${dbL(LR)?.del}`, LR, '');
+        const PT = await mkTask(A.rep, { title: `${MARK} in-rep-private`, list_id: LR, assignee_id: ID.rep });
+        const inList = () => (PT.id ? scalar(`SELECT COALESCE(list_id::text,'') FROM task.tasks WHERE id=${lit(PT.id)}`) === LR : true);
+        for (const [who, a] of [['oa', A.oa], ['ta', A.ta]]) {
+          const ad = await delL(a, LR);
+          const held = ad.status === 404 && intactL(LR) && inList();
+          log({ role: who, action: 'admin DELETEs a rep\'s PRIVATE list', method: 'DELETE', endpoint: '/task-lists/:id', status: ad.status, verified: held, expected: '404, list intact, its task still in the list' });
+          if (ad.status >= 500) fail('high', who, 'DELETE of another user\'s private list 5xx', '404', `HTTP ${ad.status}`, ad.text.slice(0, 160), '');
+          else if (!held) fail('critical', who, 'An admin deleted another user\'s PRIVATE list (its tasks become visible)', '404, list intact, tasks still attached', `HTTP ${ad.status}, is_deleted=${dbL(LR)?.del}, task still in list=${inList()}`, LR, 'loadForWrite private rule in task-lists.service.ts + the private clause in softDeleteTaskList.');
+          const pu = await req(a, 'PATCH', `${T}/task-lists/${LR}`, { data: { visibility: 'org' } });
+          const vis = scalar(`SELECT visibility FROM task.task_lists WHERE id=${lit(LR)}`);
+          log({ role: who, action: 'admin PATCHes a rep\'s PRIVATE list to org-visible', method: 'PATCH', endpoint: '/task-lists/:id', status: pu.status, verified: pu.status === 404 && vis === 'private', expected: '404, still private' });
+          if (vis !== 'private' || isOk(pu.status)) fail('critical', who, 'An admin changed another user\'s PRIVATE list', '404, visibility stays private', `HTTP ${pu.status}, visibility=${vis}`, LR, 'loadForWrite private rule in task-lists.service.ts.');
+        }
+        if (PT.id) {
+          const dt = await req(A.oa, 'DELETE', `${T}/tasks/${PT.id}`);
+          const alive = scalar(`SELECT is_deleted::text FROM task.tasks WHERE id=${lit(PT.id)}`) === 'false';
+          log({ role: 'oa', action: 'org admin DELETEs a task inside a rep\'s PRIVATE list', method: 'DELETE', endpoint: '/tasks/:id', status: dt.status, verified: dt.status === 404 && alive, expected: '404, task intact' });
+          if (!alive || isOk(dt.status)) fail('critical', 'oa', 'An admin deleted a task hidden in another user\'s private list', '404, task intact', `HTTP ${dt.status}`, PT.id, 'deleteTask loads through loadVisible.');
+        }
+        // The owner is not locked out by the private rule: edit and delete follow their own
+        // capabilities, and the delete detaches the task (list_id NULL) without deleting it.
+        const repCanManage = !!caps.rep?.has('tasks.lists.manage'), repCanDelList = !!caps.rep?.has('tasks.lists.delete');
+        const ou = await req(A.rep, 'PATCH', `${T}/task-lists/${LR}`, { data: { name: `${MARK}-rep-private-renamed` } });
+        log({ role: 'rep', action: 'owner PATCHes their own PRIVATE list', method: 'PATCH', endpoint: '/task-lists/:id', status: ou.status, verified: isOk(ou.status) === repCanManage, expected: repCanManage ? '2xx' : '403' });
+        if (ou.status === 404 || ou.status >= 500) fail('high', 'rep', 'The owner cannot edit their own private list', repCanManage ? '2xx' : '403', `HTTP ${ou.status}`, ou.text.slice(0, 160), 'loadForWrite private rule must compare owner_id to the caller.');
+        const od = await delL(A.rep, LR);
+        const gone = dbL(LR)?.del === 'true';
+        const ptRow = PT.id ? rows(`SELECT COALESCE(list_id::text,''), is_deleted::text FROM task.tasks WHERE id=${lit(PT.id)}`, ['list', 'del'])[0] : null;
+        log({ role: 'rep', action: 'owner DELETEs their own PRIVATE list', method: 'DELETE', endpoint: '/task-lists/:id', status: od.status, verified: isOk(od.status) === gone && gone === repCanDelList, expected: repCanDelList ? '2xx, list deleted, task detached' : '403, list intact' });
+        if (od.status === 404 || od.status >= 500) fail('high', 'rep', 'The owner cannot delete their own private list', repCanDelList ? '2xx' : '403', `HTTP ${od.status}`, od.text.slice(0, 160), 'softDeleteTaskList private clause must allow owner_id = caller.');
+        else if (isOk(od.status) !== gone) fail('critical', 'rep', 'Private list delete response and DB disagree', 'agree', `HTTP ${od.status}, is_deleted=${dbL(LR)?.del}`, LR, '');
+        else if (gone && ptRow && !(ptRow.list === '' && ptRow.del === 'false')) fail('high', 'rep', 'Deleting an own private list lost or kept its task wrongly', 'task survives with list_id NULL', JSON.stringify(ptRow), LR, 'softDeleteTaskList detach.');
+        else if (!gone && ptRow && ptRow.list !== LR) fail('critical', 'rep', 'A refused list delete still detached its tasks', 'task still in the list', JSON.stringify(ptRow), LR, 'Detach only when the list UPDATE returned a row.');
       }
     }
   }

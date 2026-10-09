@@ -3,8 +3,10 @@
 // suites/core/branding.mjs proves the happy paths, the Super-Admin-only surface and the theme lock.
 // This suite pins the three-way split it does not assert field by field:
 //
-//   Super Admin owns   : logos/icons, product names, login link (public_key), theme + theme_locked
-//   Tenant admin owns  : terms, menu labels/icons (nav_overrides), theme ONLY while unlocked
+//   Super Admin owns   : logos/icons, product names, terms (renamed words), menu labels/icons (nav_overrides),
+//                        regional formats (locale_config), login link (public_key), theme + theme_locked
+//   Tenant admin owns  : the THEME only (preset, seed_hex, font, default_mode, color_overrides), and only while unlocked
+//                        (tenantBrandingUpdateSchema is .strict(), schema 1.73.0 / 1.75.0)
 //   Every user owns    : a personal theme; light/dark AND text size survive the tenant lock
 //
 //   O1  tenant admin PUT /tenant/branding with every SA-owned or forged field (theme_locked,
@@ -14,7 +16,7 @@
 //       61 menu entries, bad icon / id): all 4xx and nothing stored
 //   O3  tenant admin valid PUT lands in OWN tenant only; a colleague's /me/branding shows it, the
 //       OTHER tenant's users and its row signature do not; SA PUT on tenant B leaves tenant A byte-identical
-//   O4  Super Admin PUT with tenant-owned fields (terms, nav_overrides) or font_size: 422, nothing stored;
+//   O4  Super Admin PUT with personal / forged fields (font_size, public_key, tenant_id, assets): 422, nothing stored;
 //       unknown tenant 404, malformed id 422
 //   F1  text size for EVERY login: PUT {font_size: sm|md|lg|xl} graded by LIVE platform.appearance,
 //       DB iam.user_preferences.theme.font_size, /me/branding theme.user.font_size + personal
@@ -116,6 +118,9 @@ async function tenantSplit(A) {
       'updated_by (audit column)': { updated_by: A.uid },
       'tenant_id (foreign)': { tenant_id: A.other },
       'font_size (personal-only)': { font_size: 'xl' },
+      'terms (SA-owned since 1.73.0)': { terms: { leads: MARK } },
+      'nav_overrides (SA-owned since 1.73.0)': { nav_overrides: { leads: { label: MARK } } },
+      'locale_config (SA-owned)': { locale_config: { locale: 'en-GB' } },
       'unknown key': { is_admin: true },
       'terms + a smuggled SA field': { terms: { leads: MARK }, theme_locked: false },
     };
@@ -175,11 +180,17 @@ async function tenantIsolation() {
     // make sure the theme is NOT locked so a colour write is meaningful too
     const sa = await actor('super_admin');
     try { await req(sa, 'PUT', SA(TB), { data: { theme_locked: false } }); } finally { await sa.close(); }
-    const put = await req(ta, 'PUT', `${GATEWAY}/tenant/branding`, { data: { terms: { lead: MARK, leads: `${MARK}s` }, nav_overrides: { leads: { label: `${MARK} Nav`, icon: 'users' } } } });
+    // Terms and menu labels are Super Admin's since 1.73.0: the SA writes them, the tenant admin is refused.
+    const saW = await actor('super_admin');
+    let put;
+    try { put = await req(saW, 'PUT', SA(TB), { data: { terms: { lead: MARK, leads: `${MARK}s` }, nav_overrides: { leads: { label: `${MARK} Nav`, icon: 'users' } } } }); } finally { await saW.close(); }
+    const tryTa = await req(ta, 'PUT', `${GATEWAY}/tenant/branding`, { data: { terms: { leads: `${MARK}-TA` } } });
+    log({ role: TADM_B.key, action: 'tenant admin may NOT write terms (Super Admin owns them)', method: 'PUT', endpoint: '/tenant/branding', status: tryTa.status, verified: !isOk(tryTa.status) && !(rowOf(TB)?.terms ?? '').includes(`${MARK}-TA`), expected: '4xx, nothing stored' });
+    if (isOk(tryTa.status)) fail('high', TADM_B.key, 'Tenant admin wrote terms, which Super Admin owns', '422', `HTTP ${tryTa.status}`, tryTa.text.slice(0, 160), 'tenantBrandingUpdateSchema must stay strict.');
     const rowB = rowOf(TB);
     const landed = !!rowB && rowB.terms.includes(MARK) && rowB.nav_overrides.includes(`${MARK} Nav`);
-    log({ role: TADM_B.key, action: 'tenant B admin saves terms + menu label', method: 'PUT', endpoint: '/tenant/branding', status: put.status, verified: landed, expected: 'tenant B row updated' });
-    if (!isOk(put.status) || !landed) { fail('high', TADM_B.key, 'Tenant admin cannot save terms / menu overrides', '200 and the row reflects it', `HTTP ${put.status}`, put.text.slice(0, 200), 'updateTenantBranding / upsertTenantBranding.'); return; }
+    log({ role: 'super_admin', action: 'SA saves tenant B terms + menu label', method: 'PUT', endpoint: '/sa/tenants/:id/branding', status: put.status, verified: landed, expected: 'tenant B row updated' });
+    if (!isOk(put.status) || !landed) { fail('high', 'super_admin', 'Super Admin cannot save terms / menu overrides', '200 and the row reflects it', `HTTP ${put.status}`, put.text.slice(0, 200), 'saUpdateBranding / upsertTenantBranding.'); return; }
     if (sig(TA) !== sA0) fail('critical', TADM_B.key, 'A tenant B admin save changed tenant A\'s branding row', 'tenant A signature identical', 'changed', '', 'tenant_id must come from the session; RLS WITH CHECK pins it.');
     // propagation: a same-tenant colleague sees it
     const m = await req(rp, 'GET', `${GATEWAY}/me/branding`);
@@ -215,8 +226,6 @@ async function superAdminHalf() {
   try {
     const s0 = sig(TB);
     const bad = {
-      'terms (tenant-owned)': { terms: { leads: MARK } },
-      'nav_overrides (tenant-owned)': { nav_overrides: { leads: { label: MARK } } },
       'font_size (personal-only)': { font_size: 'xl' },
       'public_key (use rotate-key)': { public_key: '88888888-8888-4888-8888-888888888888' },
       'tenant_id in body': { tenant_id: TA },
@@ -227,7 +236,7 @@ async function superAdminHalf() {
       const r = await req(sa, 'PUT', SA(TB), { data: body });
       if (isOk(r.status)) took.push(n); else if (r.status >= 500) fail('medium', 'super_admin', `SA PUT (${n}) 5xx`, '422', `HTTP ${r.status}`, r.text.slice(0, 160), 'saBrandingUpdateSchema is strict.');
     }
-    log({ role: 'super_admin', action: 'SA PUT with tenant-owned / personal / forged fields', method: 'PUT', endpoint: '/sa/tenants/:id/branding', status: took.length ? 200 : 422, verified: !took.length && sig(TB) === s0, expected: `422 x${Object.keys(bad).length}, nothing stored` });
+    log({ role: 'super_admin', action: 'SA PUT with personal / forged fields', method: 'PUT', endpoint: '/sa/tenants/:id/branding', status: took.length ? 200 : 422, verified: !took.length && sig(TB) === s0, expected: `422 x${Object.keys(bad).length}, nothing stored` });
     if (took.length) fail('high', 'super_admin', `SA branding PUT accepted fields it does not own: ${took.join(', ')}`, '422 (the halves are separate strict schemas)', took.join(', '), '', 'Keep saBrandingUpdateSchema and tenantBrandingUpdateSchema disjoint.');
     for (const [n, url, want] of [['unknown tenant', SA('99999999-9999-4999-8999-999999999999'), 404], ['malformed tenant id', SA('not-a-uuid'), 422]]) {
       const r = await req(sa, 'PUT', url, { data: { default_mode: 'light' } });

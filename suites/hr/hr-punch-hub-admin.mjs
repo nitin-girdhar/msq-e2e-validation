@@ -212,6 +212,17 @@ try {
   check(auditCount('attendance_bulk_regularized', trainer.id, since3) === 1 && auditCount('attendance_bulk_regularized', peer.id, since3) === 1 && (!msqUser || auditCount('attendance_bulk_regularized', msqUser, since3) === 0), 'one audit row per SUCCESSFUL person, none for the rejected', ['medium', 'fitness_manager', 'audit.activities', 'Bulk regularize audit', '1 per valid person', 'mismatch', '', 'audit loop over results.filter(ok).']);
   const br2 = await post(A.admin, `${T}/admin/bulk-regularize`, { user_ids: [trainer.id, peer.id], work_date: D4, status_name: 'present', reason: 'E2E-again' });
   check(br2.status === 200 && dayRow(trainer.id, D4)?.status === 'present' && Number(scalar(`SELECT COUNT(*) FROM hr.attendance_days WHERE user_id=${lit(trainer.id)} AND work_date=${lit(D4)}`)) === 1, 'second bulk run upserts the same day (no duplicate row)', ['high', 'fitness_manager', `POST ${T}/admin/bulk-regularize`, 'Re-run', 'upsert on (user_id, work_date)', JSON.stringify(br2.body).slice(0, 150), '', 'ON CONFLICT.']);
+  // Nobody decides their own attendance: the caller's own id is reported as a failure and gets
+  // no row, while the rest of the batch still goes through.
+  const selfBefore = dayRow(admin.id, D4);
+  const brSelf = await post(A.admin, `${T}/admin/bulk-regularize`, { user_ids: [admin.id, peer.id], work_date: D4, status_name: 'wfh', reason: `E2E-self-${stamp}` });
+  const selfRes = (brSelf.body?.data?.results ?? []).find((r) => r.user_id === admin.id);
+  const peerRes = (brSelf.body?.data?.results ?? []).find((r) => r.user_id === peer.id);
+  const selfAfter = dayRow(admin.id, D4);
+  act('fitness_manager', AREA, 'bulk-regularize including own id', 'POST', `${T}/admin/bulk-regularize`, brSelf, { verified: selfRes?.ok === false && peerRes?.ok === true, expected: 'own id refused, others applied' });
+  check(brSelf.status === 200 && selfRes?.ok === false && !!selfRes?.error && peerRes?.ok === true && JSON.stringify(selfAfter) === JSON.stringify(selfBefore) && dayRow(peer.id, D4)?.status === 'wfh',
+    `self-regularization refused: own=${JSON.stringify(selfRes)} peer ok=${peerRes?.ok}; own day unchanged`,
+    ['high', 'fitness_manager', `POST ${T}/admin/bulk-regularize`, 'Override holder regularized their own attendance', 'own id ok:false with an error, no row written; other ids applied', JSON.stringify({ selfRes, selfBefore, selfAfter }).slice(0, 250), '', 'Skip id === caller in the bulk-regularize loop (same rule as manual punch).']);
   const bneg = [
     ['unknown status', { user_ids: [trainer.id], work_date: D4, status_name: 'on_vacation', reason: 'E2E-x' }, [400]],
     ['future date', { user_ids: [trainer.id], work_date: addDays(todayIso(), 2), status_name: 'present', reason: 'E2E-x' }, [400]],

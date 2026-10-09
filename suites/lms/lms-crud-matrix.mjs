@@ -86,7 +86,10 @@ if (sharedLeadId) {
 // Reassignment is a manager-and-up action (org_manager rank 60).
 console.log('\n— transfer lead (LMS_LEADS_TRANSFER) —');
 const repUserId = scalar(`SELECT id FROM iam.users WHERE email=${lit(cfg.secondaryActors.find((a) => a.actor === 'rep2').email)} LIMIT 1`);
-if (sharedLeadId && repUserId) {
+// 2026-10: POST /leads/:id/transfer is now a BRANCH transfer (target_org_id, creates a copy), covered by
+// suites/lms/lead-transfer.mjs. The old reassign-to-a-user contract this step tested no longer exists.
+const LEGACY_USER_TRANSFER = false;
+if (LEGACY_USER_TRANSFER && sharedLeadId && repUserId) {
   const originalAssignee = scalar(`SELECT COALESCE(assigned_user_id::text,'') FROM lms.marketing_leads WHERE id=${lit(sharedLeadId)}`);
   await runRoleMatrix({
     tool: TOOL, action: 'transfer/reassign a lead to another user',

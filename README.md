@@ -472,3 +472,12 @@ key `platform.api_tokens.view` (now `admin.api_tokens.view`).
 - The crawler never fires destructive or submit controls, so a full `npm run all`
   is safe to run against the seeded dev database. The concurrency suites make
   bounded, self-cleaning writes.
+
+## Coverage pass 2026-10-09 (first live run of the 2026-10-06 suites, schema 1.76.0)
+
+All 87 stages ran against the rebuilt local stack; results and the Cycle 7 triage are in `../openissues.md` (source: `openissues.curated.md`).
+
+- **Actors.** The MSquare tenant now has `msq_tenant_admin`, `msq_org_admin`, `msq_cto`, `msq_content_manager`, `msq_editor`, `msq_sd1` and `msq_rep1`. `msq_rep1` is a **fixture** `sales_representative` (`employee.msq@e2e-fixture.test`) that `provision-readonly.mjs` creates through the Team API; it must not be a real HR/admin account, because several payroll/payslip suites assume it holds `payslip.view` but not `payroll.manage`.
+- **Fixed in the harness:** `capability.mjs roleId()` ignores inactive role copies; `auth-recovery` types one password into both fields (`pw()` embeds `Date.now()`); `auth-screens` matches the hostile host, not the whole URL; `leave-apply-v2` retries fixture requests that hit a 409 overlap; the user-reassign transfer step in `lms-crud-matrix.mjs` is retired (transfer is now a branch transfer, covered by `lead-transfer.mjs`).
+- **Known stale:** `branding-ownership.mjs` still encodes the old ownership split (tenant admin owned words and menu labels); the product now gives those to Super Admin. Rewrite O2/O4 before trusting its two highs.
+- **Docker stalls.** Rancher's Hyper-V socket can stall for minutes under this load and crashes or silently weakens whichever stage is running. Check `results/run-ledger.json` and the log for `Hyper-V` / `COULD NOT RUN`, then `node rerun.mjs <suite>`.

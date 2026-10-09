@@ -46,6 +46,7 @@
     "data:health": "node suites/data/data-health.mjs",
     "security:sweep": "node suites/security/api-surface-sweep.mjs",
     "security:edge": "node suites/security/public-edge.mjs",
+    "security:traversal": "node suites/security/gateway-path-traversal.mjs",
     "core:switch-org": "node suites/core/switch-org.mjs",
     "core:account": "node suites/core/account-session-lifecycle.mjs",
     "core:lookup-authz": "node suites/core/core-07-lookup-admin-authz.mjs",

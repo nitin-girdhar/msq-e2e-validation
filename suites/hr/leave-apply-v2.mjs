@@ -78,8 +78,8 @@ try {
     const up = await apiPost(emp, `${HR}/api/hr/leave/attachments`, { file_name: 'medical.png', data_base64: b64(K.PNG_1x1) });
     const tok = up.body?.data?.token;
     K.journal(world.empKey, 'Apply leave', 'upload a supporting document (PNG)', 'POST', '/hr/leave/attachments', up.status, !!tok, '201 + owner-bound token');
-    if (up.status !== 201 || !tok?.startsWith(`leave/${world.orgId}/${world.empId}/`) || up.body.data.mime !== 'image/png' || up.body.data.size !== K.PNG_1x1.length) {
-      fail('high', world.empKey, 'Upload a valid PNG', '201 with token leave/<org>/<user>/<uuid>.png, mime image/png, exact size', `HTTP ${up.status}`, K.j(up.body), 'Fix leave-attachments.router.ts upload response.');
+    if (up.status !== 201 || !tok?.startsWith(`${world.tenantId}/${world.orgId}/${world.empId}/leave/`) || up.body.data.mime !== 'image/png' || up.body.data.size !== K.PNG_1x1.length) {
+      fail('high', world.empKey, 'Upload a valid PNG', '201 with token <tenant>/<org>/<user>/leave/<uuid>.png, mime image/png, exact size', `HTTP ${up.status}`, K.j(up.body), 'Fix leave-attachments.router.ts upload response.');
     }
     const spoof = async (name, bytes, label, expectOk = false) => {
       const r = await apiPost(emp, `${HR}/api/hr/leave/attachments`, { file_name: name, data_base64: b64(bytes) });
@@ -312,7 +312,7 @@ try {
     };
     const xId = world.xEmpKey ? insertForeign(K.emailOfKey(world.xEmpKey), world.otherTenantId, scalar(`SELECT org_id FROM iam.users WHERE email=${lit(K.emailOfKey(world.xEmpKey).toLowerCase())}`), 'tenantB') : null;
     const nId = world.noidaKey ? insertForeign(K.roleMeta(world.noidaKey).email, world.tenantId, world.noidaOrgId, 'noida') : null;
-    const R = []; for (let i = 0; i < 5; i++) { const x = await newPending(emp); if (x.id) R.push(x.id); }
+    const R = []; for (let i = 0; R.length < 5 && i < 10; i++) { const x = await newPending(emp); if (x.id) R.push(x.id); else console.log(`  (fixture request ${i} refused: HTTP ${x.r.status} ${JSON.stringify(x.r.body).slice(0, 160)})`); }
     const apprOwn = await newPending(appr, { reason: `${MARK}-approver-own` });
     const done = R.pop(); // decided up front
     const pre = await apiPost(appr, `${HR}/api/hr/leave/requests/${done}/approve`, { comment: 'pre' });
@@ -366,7 +366,8 @@ try {
       });
     }
     // cross tenant bulk
-    if (world.xKey) {
+    if (world.xKey && !(A3 && A4)) fail('high', 'harness', 'Cross-tenant bulk approve not exercised', 'four pending fixture requests', `pool=${JSON.stringify(R)}`, '', 'newPending produced fewer than 4 requests (policy/balance/notice window) - fix the fixture, not the product');
+    if (world.xKey && A3 && A4) {
       const xa = await actor(world.xKey);
       try {
         const r = await apiPost(xa, `${HR}/api/hr/leave/requests/bulk-decision`, { request_ids: [A3, A4], decision: 'approve' });
