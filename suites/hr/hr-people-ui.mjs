@@ -601,7 +601,7 @@ async function forms() {
         const rt = await wrT; await hp.waitForTimeout(900);
         t.check(rt?.status() === 204 && scalar(`SELECT is_deleted::text FROM hr.announcements WHERE id=${lit(aid)}`) === 'true', 'high', ADMK, 'UI: Retire removes the announcement', '204 + is_deleted', `${rt?.status()}`);
         await ep.reload({ waitUntil: 'domcontentloaded' }); await settle(ep);
-        t.check(!(await bodyText(ep)).includes(MARK), 'high', EMPK, 'UI: a retired announcement disappears from the employee dashboard', 'gone', 'still shown');
+        t.check(!(await bodyText(ep)).includes(title), 'high', EMPK, 'UI: a retired announcement disappears from the employee dashboard', 'gone', 'still shown');
       }
       report(ADMK, 'F5 /hrms/dashboard', delta(adm.log, m1), { allowBad: /\/hr\/announcements/ });
       report(EMPK, 'F5 /hrms/dashboard', delta(emp.log, m2), { allowBad: /\/hr\/announcements/ });

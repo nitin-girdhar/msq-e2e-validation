@@ -28,7 +28,9 @@ const RX = {
   // IS clicked; on production-refresh data that means real Meta Graph calls
   // and real leads re-assigned or ignored. Inventoried, never fired — the
   // dedicated suites exercise these through the API, deliberately.
-  sideEffect: /\b(sync|pull|fetch leads|retry|ignore|remap|apply(?! for)|re-?run|run now|run|import|transfer|clear|resend|notify|send|publish|rotate|regenerate|enroll|activate|enable|mark (as )?(done|complete|read)|move|merge|restore|test rules?)\b/i,
+  // lock/unlock: cycle 9 — the HR crawl pressed Payroll "Lock month" as hr_admin and froze
+  // attendance corrections for the whole month (hr.pay_periods.status = 'locked').
+  sideEffect: /\b(lock|unlock|finali[sz]e|sync|pull|fetch leads|retry|ignore|remap|apply(?! for)|re-?run|run now|run|import|transfer|clear|resend|notify|send|publish|rotate|regenerate|enroll|activate|enable|mark (as )?(done|complete|read)|move|merge|restore|test rules?)\b/i,
   openForm: /\b(add|create|new|edit|update|invite|assign|reassign|adjust|configure|apply for|request|punch|check ?in|check ?out|regulari[sz])\b/i,
   submit: /\b(save|submit|confirm|approve|reject|create account|send|update)\b/i,
   safe: /\b(view|details|open|filter|search|export|download|refresh|next|prev|previous|show|expand|collapse|sort|today|month|week|day|team|mine|all)\b/i,

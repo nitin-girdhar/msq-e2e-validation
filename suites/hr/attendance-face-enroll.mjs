@@ -2,10 +2,10 @@
 // reference, and every guard is server-side" suite.
 //
 // Covers the new enrollment model where the reference photo is the user's avatar
-// (iam.users.photo_key, written by identity-service) and hr-service enrolls that
-// stored photo with CompreFace. None of these cases needs CompreFace running:
-// each asserts a guard that fires BEFORE the CompreFace call, or an identity
-// photo endpoint (which never calls CompreFace at all).
+// (iam.users.photo_key, written by identity-service) and hr-service builds an
+// encrypted face template from that stored photo with its IN-PROCESS engine
+// (ONNX, schema 1.81.0 — no external face service). Every case asserts a guard
+// or a deterministic engine verdict; none needs a real face photo.
 //
 // Server contracts under test:
 //   identity  POST /api/users/me/photo    consent:false → 422 PHOTO_CONSENT_REQUIRED
@@ -15,6 +15,7 @@
 //   hr        POST /api/hr/attendance/face/enroll:
 //               consent:false                     → 422 FACE_CONSENT_REQUIRED
 //               self, no avatar                    → 400 FACE_NO_PHOTO
+//               self, avatar with no face          → 400 FACE_NO_FACE (quality gate)
 //               someone else, as non-admin         → 403
 //               self, within cooldown              → 422 FACE_CHANGE_COOLDOWN
 //
@@ -31,7 +32,9 @@ const FACE_ME = `${HR}/api/hr/attendance/face/me`;
 const ENROLL = `${HR}/api/hr/attendance/face/enroll`;
 
 // A minimal valid 1×1 JPEG — enough for identity to store (it never runs face
-// detection); the CompreFace-dependent happy path is out of scope here.
+// detection) and guaranteed to hold no face, so hr's engine must refuse it. The
+// face-positive happy path needs a consented photo and is covered by the
+// calibration run (msq-hrms/services/hr-service/scripts/face-calibrate.ts).
 const JPEG =
   'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAAAv/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwD/2Q==';
 
@@ -154,8 +157,25 @@ try {
     grade('face/me after upload → has_photo', body?.data?.has_photo === true, JSON.stringify(body?.data ?? {}));
   }
 
+  // 8b. enroll self now that an avatar exists, but it holds no face → 400
+  //     FACE_NO_FACE from the in-process engine; nothing is written (enrolment
+  //     fails closed), so face/me must still report enrolled=false.
+  {
+    const { status, body } = await apiPost(a, ENROLL, { user_id: userId, consent: true });
+    grade('enroll self, faceless avatar → 400 FACE_NO_FACE',
+      status === 400 && String(code(body)).includes('FACE_NO_FACE'),
+      `http=${status} code=${code(body)}`,
+      'high', 'The enrolment quality gate must refuse a reference photo with no detectable face.');
+    const tpl = scalar(`SELECT count(*) FROM hr.face_templates WHERE user_id=${lit(userId)}`);
+    const me = await apiGet(a, FACE_ME);
+    grade('faceless enrol writes nothing (no template, not enrolled)',
+      String(tpl) === '0' && me.body?.data?.enrolled === false,
+      `templates=${tpl} enrolled=${me.body?.data?.enrolled}`,
+      'high', 'A refused enrolment must not leave a template or flip the profile to enrolled.');
+  }
+
   // 9. Cooldown: simulate a recent enrolment + a 30-day org cooldown, then a
-  //    self re-enroll must be refused with FACE_CHANGE_COOLDOWN (pre-CompreFace).
+  //    self re-enroll must be refused with FACE_CHANGE_COOLDOWN (before the engine runs).
   {
     // Snapshot the branch's rule row first — this is REAL attendance config
     // (require_face_match): an earlier run left a 30-day / face-required rule on

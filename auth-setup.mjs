@@ -29,7 +29,7 @@ async function waitForHydration(page) {
 }
 
 // One login attempt -> a saved storageState at .auth/<stateKey>.json.
-async function login({ stateKey, email }) {
+async function login({ stateKey, email, sessionOrg }) {
   const browser = await chromium.launch();
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
@@ -76,7 +76,11 @@ async function login({ stateKey, email }) {
       // them off /leave (apply is home-branch only) — which the suites then read
       // as "Apply leave hidden from a permitted user".
       const home = page.locator('button, [role="option"], li').filter({ hasText: /· Default/ }).first();
-      const option = (await home.count()) ? home : page.locator('button, [role="option"], li').first();
+      // roles.json `sessionOrg` overrides the home branch for a login whose home is unusable
+      // (hr_admin is homed in the INACTIVE Fitclass - Head Office: every branch-pinned HR
+      // action then 404s "not found in this org"). Cycle 9.
+      const wanted = sessionOrg ? page.locator('button, [role="option"], li').filter({ hasText: sessionOrg }).first() : null;
+      const option = wanted && (await wanted.count()) ? wanted : (await home.count()) ? home : page.locator('button, [role="option"], li').first();
       await option.click({ timeout: 10000 }).catch(() => {});
       // networkidle alone is flaky under load (many browsers/dev-servers
       // contending for CPU): the org-switch fetch + client-side navigation
@@ -111,7 +115,7 @@ async function login({ stateKey, email }) {
 // their actor label (rep2, rep3) so concurrency suites can open two same-role
 // contexts against distinct users.
 let logins = [
-  ...cfg.roles.map((r) => ({ stateKey: r.role, email: r.email })),
+  ...cfg.roles.map((r) => ({ stateKey: r.role, email: r.email, sessionOrg: r.sessionOrg })),
   ...(cfg.secondaryActors ?? []).map((a) => ({ stateKey: a.actor, email: a.email })),
   // Tenant B — required by the cross-tenant isolation suite.
   ...(cfg.crossTenantActors ?? []).map((a) => ({ stateKey: a.stateKey, email: a.email })),

@@ -74,14 +74,14 @@ const CASES = [
   },
   // Was 'lms.apiclients' pointed at lms-web's /dashboard/api-clients — BOTH
   // deleted wholesale by msq-lms@8fc420c ("API clients moved to Admin panel").
-  // The feature now lives in admin-web, gated by platform.api_tokens.view, not
+  // The feature now lives in admin-web, gated by admin.api_tokens.view (renamed from platform.* in 1.76.0), not
   // a per-product capability. Re-pointed 2026-08-09; see the note in
   // apiclients-fresh-revoke.mjs for how the stale key silently no-op'd this
   // case for a while (baseline check saw `grantedBefore` falsy and skipped).
   {
     // critical (not just high): this endpoint mints/rotates/deletes live
     // integration credentials — see apiclients-fresh-revoke.mjs.
-    cap: 'platform.api_tokens.view', kind: 'page', critical: true,
+    cap: 'admin.api_tokens.view', kind: 'page', critical: true,
     app: 'admin-web', path: '/dashboard/api-tokens',
     ui: { type: 'nav', text: 'API Tokens' },
     api: { url: (g) => `${g}/api-clients` },

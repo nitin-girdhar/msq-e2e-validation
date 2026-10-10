@@ -46,7 +46,9 @@
       "dept": "hr",
       "org": "Gurugram - Sector 69",
       "actsAs": "hr_admin",
-      "_note": "2026-09-29 prod refresh: hr-head@fitclass.in no longer exists; the Fitclass hr_admin is now hr-admin@fitclass.in (homed in the inactive Fitclass - Head Office)."
+      "_note": "2026-09-29 prod refresh: hr-head@fitclass.in no longer exists; the Fitclass hr_admin is now hr-admin@fitclass.in (homed in the inactive Fitclass - Head Office).",
+      "sessionOrg": "Gurugram - Sector 69",
+      "_sessionOrgNote": "Cycle 9: auth-setup picks this branch instead of the home (inactive Head Office) so branch-pinned HR actions reach Sector 69 employees."
     },
     {
       "role": "fitness_manager",

@@ -76,7 +76,7 @@ for (const role of ['hr_admin', 'org_admin', 'tenant_admin', 'org_manager', 'sal
     // Graded by the role's LIVE capability (tenant overrides and parent-denial
     // cascade included), not by role name — role names are not the authz boundary.
     const caps = await sessionCaps(a);
-    const shouldAllow = caps ? caps.has('hr.attendance.admin.reports.view') : !['sales_representative', 'read_only'].includes(role);
+    const shouldAllow = caps ? caps.has('hr.reports.attendance.view') : !['sales_representative', 'read_only'].includes(role);
     const data = Array.isArray(r.body?.data) ? r.body.data : Array.isArray(r.body?.data?.rows) ? r.body.data.rows : [];
     let mismatch = [];
     if (r.status === 200) {
@@ -85,8 +85,8 @@ for (const role of ['hr_admin', 'org_admin', 'tenant_admin', 'org_manager', 'sal
       mismatch = data.filter((x) => x.user_id in view && Number(x.wfh_count) !== view[x.user_id]);
     }
     logAction({ tool: TOOL, role, area: PAGE, action: `open monthly summary report for ${month} and compare wfh_count with the view`, method: 'GET', endpoint: '/hr/attendance/reports/summary', status: r.status, outcome: outcomeOf(r.status, mismatch.length === 0), verified: r.status === 200 ? mismatch.length === 0 : null, expected: shouldAllow ? '200' : '403' });
-    if (shouldAllow && r.status !== 200) fail(r.status >= 500 ? 'high' : 'medium', role, `Open monthly summary report (${month})`, '200', `HTTP ${r.status}`, JSON.stringify(r.body).slice(0, 200), 'Check hr.attendance.admin.reports.view grant for this role.');
-    if (!shouldAllow && r.status === 200) fail('high', role, 'Monthly summary report is capability-gated', '403', `200 with ${data.length} rows (payroll data)`, '', 'requireCapability(HR_ATTENDANCE_ADMIN_REPORTS_VIEW) must deny this role.');
+    if (shouldAllow && r.status !== 200) fail(r.status >= 500 ? 'high' : 'medium', role, `Open monthly summary report (${month})`, '200', `HTTP ${r.status}`, JSON.stringify(r.body).slice(0, 200), 'Check hr.reports.attendance.view grant for this role.');
+    if (!shouldAllow && r.status === 200) fail('high', role, 'Monthly summary report is capability-gated', '403', `200 with ${data.length} rows (payroll data)`, '', 'requireCapability(HR_REPORTS_ATTENDANCE_VIEW) must deny this role.');
     if (mismatch.length) fail('medium', role, 'Report wfh_count equals the view', 'identical', `${mismatch.length} user(s) differ`, JSON.stringify(mismatch.slice(0, 2)), 'monthlySummary reads the view directly; a difference means a second code path computes it.');
   } finally { await a.close(); }
 }

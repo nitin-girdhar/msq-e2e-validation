@@ -42,7 +42,7 @@ const month = new Date().toISOString().slice(0, 7);
 // ── 1. Capability matrices ───────────────────────────────────────────────────
 for (const [action, endpoint, cap, act] of [
   ['list employees', 'GET /hr/employees', 'hr.employees.view', (a) => apiGet(a, `${HR}/employees`)],
-  ['attendance monthly summary report', 'GET /hr/attendance/reports/summary', 'hr.attendance.admin.reports.view', (a) => apiGet(a, `${HR}/attendance/reports/summary?month=${month}`)],
+  ['attendance monthly summary report', 'GET /hr/attendance/reports/summary', 'hr.reports.attendance.view', (a) => apiGet(a, `${HR}/attendance/reports/summary?month=${month}`)],
   ['list face-review queue', 'GET /hr/attendance/face-reviews', 'hr.attendance.regularization.approve', (a) => apiGet(a, `${HR}/attendance/face-reviews`)],
 ]) {
   console.log(`\n— ${action} (${cap}) —`);

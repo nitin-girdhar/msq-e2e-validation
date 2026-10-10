@@ -86,7 +86,7 @@ export function grade(rep, { role, scenario, has, status, effect = null, evidenc
 // ── UI sweep ─────────────────────────────────────────────────────────────────
 // Buttons that must NEVER be pressed in a sweep: session ends, remote
 // side-effects (Meta/sync/transfer), destructive, key rotation, submits.
-export const NEVER_CLICK = /\b(log\s?out|sign\s?out|logout|switch (account|branch)|change branch|delete|remove|deactivate|disable|revoke|archive|reset password|terminate|sync|pull|fetch leads|retry|ignore|remap|re-?run|run now|import|transfer|resend|notify|send|publish|rotate|regenerate|enroll|activate|enable|mark|merge|restore|apply|assign|reassign|confirm|submit|save|create|upload|export|download|clear all|approve|reject|whatsapp|transfer|campaign|meta)\b/i;
+export const NEVER_CLICK = /\b(lock|unlock|finali[sz]e|log\s?out|sign\s?out|logout|switch (account|branch)|change branch|delete|remove|deactivate|disable|revoke|archive|reset password|terminate|sync|pull|fetch leads|retry|ignore|remap|re-?run|run now|import|transfer|resend|notify|send|publish|rotate|regenerate|enroll|activate|enable|mark|merge|restore|apply|assign|reassign|confirm|submit|save|create|upload|export|download|clear all|approve|reject|whatsapp|transfer|campaign|meta)\b/i;
 
 async function snapshotLog(log) { return { c: log.consoleErrors.length, p: log.pageErrors.length, b: log.badRequests.length }; }
 function since(log, m) { return { console: log.consoleErrors.slice(m.c), page: log.pageErrors.slice(m.p), bad: log.badRequests.slice(m.b) }; }
