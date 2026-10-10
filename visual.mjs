@@ -152,7 +152,11 @@ async function measure(page, viewportWidth) {
       el.disabled === true ||
       s.pointerEvents === 'none' ||
       el.closest('[inert]') !== null ||
-      !!el.closest('fieldset[disabled]');
+      !!el.closest('fieldset[disabled]') ||
+      // AG Grid's pager buttons are <div role=button aria-disabled=true>; the grid
+      // ignores clicks while disabled, so they are inert by the library's contract
+      // (Cycle 10 triage: 91 findings were this one component).
+      !!el.closest('.ag-paging-panel');
     const fakeDisabled = [];
     for (const el of document.querySelectorAll(interactive)) {
       if (!visible(el)) continue;

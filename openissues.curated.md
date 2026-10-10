@@ -1,3 +1,77 @@
+# Cycle 10 validation (2026-10-10, local stack recreated from the 08:46 IST image bundle, schema 1.81.0)
+
+**What ran:** the full `run-all` pass, 96 stages, 04:30 to 09:04 UTC, against the **local** stack. Containers were recreated from `msq-deploy/artifacts/msq-images.tar` (every container verified on the loaded image id); the DB was already at 1.81.0 (3 tenants, 224 users). Preflight: 58/58, no drift. All 96 stages exited cleanly except the new suite below, which crashed on a bug in the suite itself (a non-existent `iam.users.tenant_id` column), was fixed and re-run in place: 17/17.
+
+**Raw volume:** 1,618 findings (critical 2, high 89, medium 477, low 1,028, info 22). Collapsed by tool with the role name removed they are 218 distinct groups. **Most of the "high" count is one cause repeated per role** (75 of 89, see C10-2) and a further handful are harness drift, so the raw count overstates the product risk. The per-tool, per-role, per-page record is in the generated sections below and in `msq-e2e-validation/results/SUMMARY.md`.
+
+How each item below is classified:
+- **CONFIRMED**: I read the code path and observed the live behaviour.
+- **HARNESS DRIFT**: the product behaves correctly and the suite's expectation is stale.
+- **CARRIED**: already open from an earlier cycle.
+- **NOT ROOT-CAUSED**: reported by the suites but not investigated in this pass. Listed, not dismissed.
+
+## New suite: `suites/hr/face-match-punch-1-81.mjs` (schema 1.81.0 in-process face match)
+
+17 passed, 0 failed.
+- **Template isolation:** RLS enabled and forced on `hr.face_templates` with no policy; no privilege for `app_user`, `tenant_admin`, `hr_svc`, `analytics_svc`, `lms_svc`; every row is `enc:v1` ciphertext; no orphan pointer; no cross-tenant row.
+- **Punch matrix as `rep1`, rule on:** `block` + not enrolled returns 422 `FACE_NOT_ENROLLED` and writes no row; `block` + undecryptable template fails open with `passed=NULL`, review `pending`; `flag` + not enrolled succeeds with review `pending`; neither `face/me` nor the check-in response contains ciphertext.
+- State (rule row, org geo, template, punches) is restored afterwards.
+- **Not covered:** the face-positive happy path and a below-threshold mismatch need a consented real photo (the `scripts/face-calibrate.ts` calibration is still pending).
+
+## Confirmed product issues
+
+### C10-1 [medium, CONFIRMED] Gateway drops `Cache-Control` / `ETag` on employee document and photo downloads
+- **Where:** `msq-core/services/api-gateway/src/server.ts:1435` (`GET /hr/documents/:id/file`), `server.ts:715` (`GET /users/:id/photo`) and the documents export zip route. All call `proxyTo` without `forwardResponseHeaders`.
+- **Control flow:** hr-service sets `Cache-Control: private, no-store` (`msq-hrms/services/hr-service/src/api/v1/documents/documents.router.ts:174-176` zip, `:221-224` file). `proxyTo` (`api-gateway/src/lib/proxy.ts:136-142`) forwards only `Content-Type`, `Content-Disposition` and the names in `options.forwardResponseHeaders`, so the header never reaches the browser. The avatar routes at `server.ts:694-700` do pass the list, which is why they are unaffected.
+- **Evidence:** `hr-documents-vault` captured `nosniff | undefined` (second value is cache-control) and the zip headers with cache-control `undefined`; `attendance-face-enroll` captured `etag=undefined` on the photo. I did not re-curl by hand.
+- **Impact:** identity documents and staff photos can be kept by a shared cache or the browser, and conditional photo requests never get a 304.
+- **Fix:** pass `{ forwardResponseHeaders: ['cache-control', 'etag', 'x-content-type-options'] }` on those three routes, as `server.ts:694-700` does.
+
+### C10-2 [low, CONFIRMED] Unknown paths with two or more segments return 400 "Invalid path parameter", not 404
+- **Where:** gateway global hook `app.addHook('preValidation', rejectUnsafePathParams)` at `server.ts:68`, implemented in `lib/upstream-url.ts:26-31`.
+- **Observed:** `POST`, `GET` and `DELETE /nonexistent/zzz` all return 400 `{"error":"Invalid path parameter"}` on the gateway directly and through `/api`; a single-segment unknown path (`POST /zzz`) returns 404. The routes `capability-toggle` was probing (`/meta/crm-event`, `/communications/send|email|whatsapp/text|whatsapp/template`) are genuinely not registered (only `/public/v1/communications/send` and `GET /communications/status` exist), so **no send route is reachable**. The 75 "route removed in 1.76.0 was re-opened" highs (5 routes x 15 logins) are this 400, not a regression of the wall.
+- **Not identified:** which registered route a two-segment unknown path matches. Something yields a parameter containing `/`, which `UNSAFE_PARAM` rejects. Starting point: `app.printRoutes()` and look for a wildcard or catch-all.
+- **Fix:** make unknown paths 404 (skip the hook when no route matched, or remove the stray wildcard). Until then `capability-toggle` should accept 404 or this 400 for removed routes.
+
+### C10-3 [low, CONFIRMED; data-health's "critical" RLS-5 is overstated] `lms_svc` holds table privileges on `ext.meta_ad_accounts`
+- **Where:** `db_scripts/07_grants.sql:796` revokes only from `app_user, tenant_admin`. The `ext` schema's default ACL gives `lms_svc` `arw` on new tables. Live: `has_table_privilege('lms_svc', 'ext.meta_ad_accounts', ...)` is true for SELECT, INSERT and UPDATE.
+- **Why it is not a leak today:** the table has RLS enabled and forced with **no policy**; `SET ROLE lms_svc; SELECT count(*)` returns 0 while the table holds 8 rows. The columns are names, status and sync timestamps, with no tokens.
+- **Risk:** defence in depth only. A policy added later for another reason would open it.
+- **Fix:** add `lms_svc` to the revoke at `07_grants.sql:796` and scope the `ext` default privileges. **First confirm which database login `meta-conversion-api` uses**: `ad-accounts.service.ts`, `campaign-sync.service.ts` and `datasets.service.ts` read this table and I did not verify that.
+
+## Harness drift (verified, not product defects)
+
+| Finding(s) | Why it is drift |
+|---|---|
+| 4 highs "branch fence: Head-Office HR reads / PUTs Sector-69 colleague" (`hr-profile-360.mjs:321-322`) | The target is the manager actor, homed in Gurugram - Sector 69. Since Cycle 9 `auth-setup` logs `hr_admin` into Sector 69 and the account is mapped into all 28 Fitclass branches (`roles.json`), so the read is in-branch. The suite still assumes a Head-Office session. The wider mapping is the privilege widening already flagged in `roles.json` for confirmation. |
+| `fitness_trainer` "Apply for casual leave (1 day)" 400 "contain no working days"; `tenant_admin` "Read the resolved day after recompute" (no row) | The run date, 2026-10-10, is a Saturday. |
+| `sales_representative` "Create a private task" 403 "no access to the Tasks product in this organization" | Tasks is licensed for MSquare, not Fitclass (known). |
+| 7 roles "/lms/dashboard/my-leads: blocked although the role holds lms.leads" | Every role lands on `/lms/dashboard/leads-history` with HTTP 200, so the route is redirected rather than blocked; the suite reads a redirect as a block. |
+
+## Carried forward (already open, re-observed)
+
+- React hydration error #418 on `/hrms` (as `hr_admin`) and `/sa/dashboard/m/capabilities` (as `super_admin`); containers run UTC, the browser IST.
+- LMS auto-assign: 2 of 26 licensed branches with active reps have no weighted user (Delhi - Moti Nagar, Gurugram - Civil Lines).
+- IAM-2: `root@root.com` is mapped to an org of another tenant (known fixture, homed in MSquare).
+- CAP back-fill: roles holding a back-fill source capability but not its target key.
+
+## Reported but NOT root-caused this pass
+
+| Area | Finding | Roles | Note |
+|---|---|---|---|
+| Visual | Disabled-state integrity (91), overlapping controls (88), tab-strip rendering (48) at narrow widths; iPad-portrait render findings across LMS, HR and ToDo | 4 to 8 | Bulk of the 477 mediums. Plausibly real layout issues; not looked at. |
+| LMS | "create a follow-up on a lead" (8 roles), "log an interaction on an existing lead" (7), "create a new lead" (4), "create an API client/token" (4) | 4 to 8 | Permission-matrix grading; could be intended denials. |
+| HR | "/hrms/team HTTP error on a normal page load" (7), "/hrms/dashboard HTTP error" (3); "create a public holiday", "create a leave policy", "change leave-year settings" (4 each) | 3 to 7 | Same family as the Cycle 9 ApplyLeavePanel 403s for non-managers. |
+| HR (single role) | `fitness_trainer` remote_role geo-exception and punch labelling, empty regularization chain; `msq_rep1` payslip UI; `fitness_manager` reject encashment 403; `msq_org_admin` pending document not in review queue; `pre_sales_captain` and `assistant_fitness_manager` "Load /profile" (404 sub-calls) | 1 each | Likely fixture or date related; unverified. |
+| Core | `PUT /tenant/branding` (rename a term) refused a permitted actor | 3 | |
+| ToDo | list rename did not persist (2), board view shows fewer status columns (4), stale-browser overwrite (`first=undefined`, looks like a harness read error) | 1 to 4 | |
+| Admin / lookup | Console says "Access restricted" although the login holds an admin node (2); some lookup tables unreadable for some roles; 18 catalog-drift items across Fitclass, MSquare and Novamin | | |
+
+## What this cycle did not cover
+- Face-positive match and below-threshold mismatch (need a consented real photo).
+- Nothing was exercised against UAT or prod.
+- No review of the 1,028 low findings.
+
 # Cycle 8 re-validation (2026-10-09, after the Cycle 7 fixes, schema 1.78.0)
 
 **What ran:** the full `run-all` pass (90 stages) against the **local** stack on **rebuilt images** (hr-service, leads-service, api-gateway, lms-web, admin-web, lookup-admin, then identity-service twice), after applying `one_time/apply_min_rest_hours.sql` (1.77.0) and `one_time/apply_departments_tenant_admin_write.sql` (1.78.0) to the local DB (backup: `db_backups/pre_cycle8_fixes_2026-10-09.dump`). One stage timed out (`admin-web-console`, a lone timeout) and passed on rerun in 924 s. Totals: **1 552 findings: 2 critical, 32 high, 475 medium, 1 027 low, 22 info** (Cycle 7: 1 595 / 2 / 61 / 480 / 1 029 / 23).

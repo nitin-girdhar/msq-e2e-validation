@@ -80,8 +80,10 @@ const orphanProfiles = scalar(`SELECT count(*) FROM hr.employee_profiles ep
 grade('no enrolment pointer without a matching template', String(orphanProfiles) === '0', `orphans=${orphanProfiles}`, 'medium',
   'Enrol/unenrol must be one transaction; backfill or clear dangling face_subject_id.');
 const crossOrg = scalar(`SELECT count(*) FROM hr.face_templates ft
-   JOIN iam.users u ON u.id=ft.user_id WHERE u.tenant_id IS DISTINCT FROM
-     (SELECT o.tenant_id FROM entity.organizations o WHERE o.id=ft.org_id)`);
+   JOIN iam.users u ON u.id=ft.user_id
+   JOIN entity.organizations uo ON uo.id=u.org_id
+   JOIN entity.organizations fo ON fo.id=ft.org_id
+  WHERE uo.tenant_id IS DISTINCT FROM fo.tenant_id`);
 grade('no template crosses a tenant boundary', String(crossOrg) === '0', `rows=${crossOrg}`, 'critical');
 
 // ── B. Punch matrix ──────────────────────────────────────────────────────────

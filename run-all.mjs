@@ -147,6 +147,7 @@ const STAGES = [
   // Look and feel across phone/tablet/laptop/desktop.
   { tag: 'visual', script: 'suites/visual/responsive-audit.mjs', timeout: 90 * MIN },
   { tag: 'visual', script: 'suites/visual/text-size-scaling.mjs', timeout: 60 * MIN },
+  { tag: 'visual', script: 'suites/visual/grid-layout.mjs', timeout: 45 * MIN },
 
   // Offline analysis over the crawl output.
   { tag: 'analysis', script: 'suites/core/tab-authz-consistency.mjs' },
